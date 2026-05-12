@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Acacia Furniture Catalog — Serverless AWS
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        TABLE_NAME:         !Ref ProductsTable
+        QUOTES_TABLE_NAME:  !Ref QuotesTable
+        IMAGES_BUCKET:      !Ref ImagesBucket
+        CLOUDFRONT_DOMAIN:  !Ref CloudFrontDomain
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, dev]
+
+  CloudFrontDomain:
+    Type: String
+    Default: ""
+    Description: "CloudFront domain (e.g. abc123.cloudfront.net). Empty on first deploy; update after stack creation."
+
+Resources:
+
+  # ─── S3: SPA (privado — solo accesible via CloudFront OAC) ──────────────────
+  SpaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: acacia-catalog-spa
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:        true
+        BlockPublicPolicy:      true
+        IgnorePublicAcls:       true
+        RestrictPublicBuckets:  true
+
+  SpaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: CloudFrontDistribution
+    Properties:
+      Bucket: !Ref SpaBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SpaBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  # ─── S3: Imágenes de productos (lectura pública) ─────────────────────────────
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: acacia-catalog-images
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:        false
+        BlockPublicPolicy:      false
+        IgnorePublicAcls:       false
+        RestrictPublicBuckets:  false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedHeaders: ['*']
+            MaxAge: 86400
+
+  ImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ImagesBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub "${ImagesBucket.Arn}/*"
+
+  # ─── DynamoDB: Tabla de productos ────────────────────────────────────────────
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: acacia-products
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # ─── DynamoDB: Tabla de cotizaciones ─────────────────────────────────────────
+  # Tabla separada de productos. PK: QUOTE#<ref> · SK: METADATA.
+  # También aloja el contador atómico (PK: COUNTER#QUOTES · SK: <year>).
+  QuotesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: acacia-quotes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ─── API Gateway ─────────────────────────────────────────────────────────────
+  CatalogApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: AcaciaCatalogApi
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # ─── Lambda: GET /products ───────────────────────────────────────────────────
+  GetProductsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/getProducts.ts
+    Properties:
+      FunctionName: acacia-get-products
+      CodeUri: backend/
+      Handler: src/handlers/getProducts.handler
+      Description: "Devuelve todos los productos activos agrupados por familia"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        GetProducts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /products
+            Method: GET
+
+  # ─── Lambda: GET /slides ─────────────────────────────────────────────────────
+  GetSlidesFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/getSlides.ts
+    Properties:
+      FunctionName: acacia-get-slides
+      CodeUri: backend/
+      Handler: src/handlers/getSlides.handler
+      Description: "Devuelve los slides activos del carrusel (Home)"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        GetSlides:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /slides
+            Method: GET
+
+  # ─── Lambda: POST /quotes ────────────────────────────────────────────────────
+  PostQuoteFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/postQuote.ts
+    Properties:
+      FunctionName: acacia-post-quote
+      CodeUri: backend/
+      Handler: src/handlers/postQuote.handler
+      Description: "Registra una nueva cotización con número de referencia atómico"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuotesTable
+      Events:
+        PostQuote:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /quotes
+            Method: POST
+
+  # ─── Lambda: GET /quotes/{reference} ─────────────────────────────────────────
+  GetQuoteStatusFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/getQuoteStatus.ts
+    Properties:
+      FunctionName: acacia-get-quote-status
+      CodeUri: backend/
+      Handler: src/handlers/getQuoteStatus.handler
+      Description: "Consulta el estatus de una cotización por referencia + teléfono"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref QuotesTable
+      Events:
+        GetQuoteStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /quotes/{reference}
+            Method: GET
+
+  # ─── CloudFront OAC ──────────────────────────────────────────────────────────
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: acacia-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ─── CloudFront Distribution ─────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        Comment: "Acacia Catalog — designed for the quiet"
+        Origins:
+          # Origen 1: SPA estático en S3 (privado via OAC)
+          - Id: SpaOrigin
+            DomainName: !GetAtt SpaBucket.RegionalDomainName
+            S3OriginConfig: {}
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+
+          # Origen 2: API Gateway REST
+          - Id: ApiOrigin
+            DomainName: !Sub "${CatalogApi}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: !Sub "/${Environment}"
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+
+        # Comportamiento default: SPA
+        DefaultCacheBehavior:
+          TargetOriginId: SpaOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          AllowedMethods: [GET, HEAD]
+
+        # Comportamiento /api/*: API Gateway (sin caché)
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: https-only
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # Managed-CachingDisabled
+            AllowedMethods: [GET, HEAD, OPTIONS]
+
+        # SPA routing — redirige 403/404 de S3 a index.html para React Router
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+# ─── Outputs ─────────────────────────────────────────────────────────────────
+Outputs:
+  CloudFrontURL:
+    Description: "URL pública del catálogo Acacia"
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+
+  ApiEndpoint:
+    Description: "Endpoint base de la API"
+    Value: !Sub "https://${CatalogApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+
+  DistributionId:
+    Description: "ID CloudFront — usar para invalidaciones después de deploy del SPA"
+    Value: !Ref CloudFrontDistribution
+
+  SpaBucketName:
+    Description: "Bucket S3 del SPA — destino de aws s3 sync"
+    Value: !Ref SpaBucket
+
+  ImagesBucketName:
+    Description: "Bucket S3 de imágenes de productos"
+    Value: !Ref ImagesBucket
+
+  ProductsTableName:
+    Description: "Tabla DynamoDB de productos"
+    Value: !Ref ProductsTable
+
+  QuotesTableName:
+    Description: "Tabla DynamoDB de cotizaciones"
+    Value: !Ref QuotesTable
