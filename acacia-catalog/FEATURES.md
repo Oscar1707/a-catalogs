@@ -12,6 +12,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
   - [Sprint 2 — Carrusel desde DynamoDB](#sprint-2--carrusel-desde-dynamodb)
   - [Sprint 3 — Backend de cotizaciones](#sprint-3--backend-de-cotizaciones)
   - [Sprint 4 — Deploy frontend a producción](#sprint-4--deploy-frontend-a-producción)
+  - [Sprint 9 — Páginas de detalle de producto](#sprint-9--páginas-de-detalle-de-producto)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -23,7 +24,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
 |---|---|
 | Rama | `feature/site-expansion` |
 | Inicio | 2026-05-11 |
-| Estado | 🟢 **En producción** — Sprints 1, 2, 3 y 4 completados · sitio live |
+| Estado | 🟢 **En producción** — Sprints 1, 2, 3, 4 y 9 completados · sitio live |
 | URL pública | https://d2pgrgppb9pktx.cloudfront.net |
 | Objetivo | Migrar a sitio multi-página (Inicio · Catálogo · Cotizaciones · Contacto) con backend para cotizaciones |
 
@@ -314,6 +315,72 @@ npm run deploy   # build + s3 sync + invalidación
 
 ---
 
+### Sprint 9 — Páginas de detalle de producto
+
+**Estado:** ✅ Desplegado en producción · `/catalogo/:slug` activo
+
+#### Decisión arquitectónica clave
+
+**Cero llamadas extra a la API** — el detalle reutiliza el cache de
+`useQuery(['products'])` que ya pobla la página `/catalogo`.
+
+- Pro: navegación instantánea desde la card (datos en memoria)
+- Pro: zero deploy de Lambda, zero costo DynamoDB adicional
+- Pro: justifica el `staleTime: 30 min` global del QueryClient
+- Con: si entras directo por URL profunda, se carga TODO el catálogo
+  antes de mostrar el detalle — aceptable porque tenemos pocos productos
+
+#### Cambios en UX
+
+| Antes | Ahora |
+|---|---|
+| Click en card → WhatsApp directo | Click en card → `/catalogo/:slug` (detalle) |
+| Card era el único punto de info | Detalle expone galería, specs por talla, precios, material |
+| Sin URL compartible por pieza | Cada pieza tiene URL pública (`/catalogo/vorden`) |
+
+#### Frontend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `frontend/src/pages/ProductDetail.tsx` 🆕 | Página de detalle: galería con miniaturas + info + specs por talla + materiales + CTA WhatsApp · Manejo 404 propio |
+| `frontend/src/components/ProductCard.tsx` | `<motion.a>` → `<motion.div><Link>` interna · pierde el target WhatsApp directo |
+| `frontend/src/App.tsx` | + ruta `/catalogo/:slug` antes del catch-all |
+
+#### Estructura del detalle
+
+```
+┌─ Breadcrumb "← Catálogo"
+├─ Hero 2 cols (desktop) / stack (mobile)
+│   ├─ Galería: imagen principal + grid de miniaturas
+│   └─ Info: línea · nombre · ref · tagline · descripción
+│            precio destacado · CTA WhatsApp · nota "puede ajustarse"
+├─ Specs por talla (S/M/L/XL) — dimensiones + precio + flag "Base"
+└─ Materia — material principal, acabado, iluminación, instalación
+```
+
+#### Manejo de estados
+
+- `isPending` → indicador sutil tipo "Cargando pieza" centrado
+- `isError` → mensaje + botón Reintentar (consistente con catálogo)
+- **Slug no encontrado** → vista 404 con tono Acacia + link "Volver al catálogo"
+- Sin imágenes → placeholder con texto "Sin imagen"
+
+#### Smoke tests producción
+
+```
+✅ /catalogo/vorden       → 200 · detalle renderiza
+✅ /catalogo/noren        → 200 · detalle renderiza
+✅ /catalogo/nonexistent  → 200 · 404 manejado en cliente
+```
+
+#### Bundle deployado
+
+| Asset | Tamaño | gzip |
+|---|---|---|
+| JS | ~380 KB (+20 KB vs Sprint 4) | ~118 KB |
+
+---
+
 ## ⏳ Pendiente
 
 ### Mejoras futuras
@@ -326,11 +393,10 @@ npm run deploy   # build + s3 sync + invalidación
 - [ ] Imágenes reales de acabados / materiales en Catálogo
 - [ ] Imágenes reales de los slides (`s3://acacia-catalog-images/slides/01-03.webp`)
 - [ ] Flag `featured: true` en productos para destacados dinámicos en Home
-- [ ] Páginas de detalle `/catalogo/:slug`
 
 ### Hallazgos / Tech debt
 
-- ⚠️ **Git**: el folder `acacia-catalog/` no está bajo control de versiones. El repo padre `a-catalogs/` solo trackea HTML antiguo. **Decisión pendiente** de Oscar: inicializar repo nuevo en `acacia-catalog/`, agregarlo al padre, o push a remote nuevo.
+- ✅ **Git resuelto** (Sprint 9): proyecto bajo control de versiones en rama `feature/site-expansion` del repo `Oscar1707/a-catalogs`. `.gitignore` excluye `node_modules`, `dist`, `.aws-sam`, `.env*`. Pendiente: `git push -u origin feature/site-expansion` cuando Oscar lo decida.
 
 ---
 

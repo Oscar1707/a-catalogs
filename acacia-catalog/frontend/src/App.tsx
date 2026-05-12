@@ -4,6 +4,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { Home } from '@/pages/Home';
 import { Catalog } from '@/pages/Catalog';
+import { ProductDetail } from '@/pages/ProductDetail';
 import { Quotes } from '@/pages/Quotes';
 import { Contact } from '@/pages/Contact';
 
@@ -27,11 +28,12 @@ export default function App() {
         <Header />
         <div className="flex-1">
           <Routes>
-            <Route path="/"             element={<Home    />} />
-            <Route path="/catalogo"     element={<Catalog />} />
-            <Route path="/cotizaciones" element={<Quotes  />} />
-            <Route path="/contacto"     element={<Contact />} />
-            <Route path="*"             element={<Home    />} />
+            <Route path="/"               element={<Home          />} />
+            <Route path="/catalogo"       element={<Catalog       />} />
+            <Route path="/catalogo/:slug" element={<ProductDetail />} />
+            <Route path="/cotizaciones"   element={<Quotes        />} />
+            <Route path="/contacto"       element={<Contact       />} />
+            <Route path="*"               element={<Home          />} />
           </Routes>
         </div>
         <Footer />
