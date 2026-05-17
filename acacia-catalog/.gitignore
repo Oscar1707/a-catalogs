@@ -1,0 +1,21 @@
+# AWS SAM build artifacts
+.aws-sam/
+
+# Node
+node_modules/
+backend/dist/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Variables de entorno locales — NUNCA commitear
+env.json
+.env
+.env.local
+
+# AWS credentials
+.aws/
+
+# OS
+.DS_Store
+Thumbs.db
