@@ -381,6 +381,50 @@ npm run deploy   # build + s3 sync + invalidación
 
 ---
 
+### Hotfix · Scroll-to-top + primeras imágenes reales
+
+**Fecha:** 2026-05-16
+
+#### 🐛 Bug fix: scroll preservado al cambiar de ruta
+
+React Router 6 mantiene la posición de scroll cuando navegas entre rutas. Si
+estabas scrolleado abajo en `/catalogo` y dabas click en "Contacto", llegabas
+con la misma posición de scroll — sentía como que la página no cargaba.
+
+**Fix:** componente `ScrollToTop` que escucha `pathname` y resetea al tope en
+cada navegación. Respeta anchors (`#seccion`) — si la URL tiene hash, no
+interfiere para no romper futuros anchor links.
+
+| Archivo | Cambio |
+|---|---|
+| `frontend/src/components/ScrollToTop.tsx` 🆕 | Listener de `useLocation` + `window.scrollTo({top:0})` |
+| `frontend/src/App.tsx` | Monta `<ScrollToTop />` dentro del `QueryClientProvider` |
+
+#### 🖼️ Primeras imágenes del catálogo en producción
+
+3 piezas con imagen real (las demás siguen con placeholder gris):
+
+| Slug | WebP final | Reducción vs original |
+|---|---|---|
+| `lumina` | 124 KB | 2.0 MB → 124 KB (-94%) |
+| `strave` | 118 KB | 1.9 MB → 118 KB (-94%) |
+| `dakota` | 163 KB | 154 KB → 163 KB (similar, ya venía optimizada) |
+
+**Pipeline:** PNG/JPG → `cwebp -q 82 -resize 1600 0 -mt` → S3 (`Cache-Control: max-age=31536000 immutable`) → DynamoDB update (`coverImage` + `images[]`).
+
+#### Script reutilizable creado
+
+`scripts/upload_product_images.sh <slug> <img1> [img2] ...`
+
+Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpeta), actualiza DynamoDB en una sola operación.
+
+```bash
+# Uso futuro:
+./scripts/upload_product_images.sh vorden ~/Desktop/vorden-{01,02,03}.png
+```
+
+---
+
 ## ⏳ Pendiente
 
 ### Mejoras futuras
