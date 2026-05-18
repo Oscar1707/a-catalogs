@@ -9,10 +9,14 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",
-    "@aws-sdk/lib-dynamodb": "^3.600.0"
+    "@aws-sdk/client-ses": "^3.1048.0",
+    "@aws-sdk/client-ssm": "^3.1048.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.140",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "esbuild": "^0.28.0",
     "typescript": "^5.4.0"

@@ -13,6 +13,8 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
   - [Sprint 3 — Backend de cotizaciones](#sprint-3--backend-de-cotizaciones)
   - [Sprint 4 — Deploy frontend a producción](#sprint-4--deploy-frontend-a-producción)
   - [Sprint 9 — Páginas de detalle de producto](#sprint-9--páginas-de-detalle-de-producto)
+- [Feature 02 · Panel de administración](#feature-02--panel-de-administración)
+  - [Sprint A1 — Auth con JWT](#sprint-a1--auth-con-jwt)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -422,6 +424,122 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 # Uso futuro:
 ./scripts/upload_product_images.sh vorden ~/Desktop/vorden-{01,02,03}.png
 ```
+
+---
+
+## Feature 02 · Panel de administración
+
+| Campo | Valor |
+|---|---|
+| Rama | `feature/site-expansion` |
+| Inicio | 2026-05-18 |
+| Estado | 🟢 Sprint A1 en producción · A2-A8 pendientes |
+| URL | `https://d2pgrgppb9pktx.cloudfront.net/admin` |
+
+### Decisiones arquitectónicas confirmadas
+
+- **Ubicación**: ruta `/admin/*` del mismo SPA (no subdominio separado)
+- **Auth**: password único + JWT HS256 (no Cognito) — más simple para 1 admin
+- **Storage de credenciales**: AWS SSM Parameter Store SecureString (cifrado por KMS)
+- **Misma API Gateway** con endpoints `/admin/*` protegidos por middleware
+- **Token storage en frontend**: localStorage (admin no expuesto a contenido de usuario)
+- **TTL del token**: 8 horas
+
+### Sprint A1 — Auth con JWT
+
+**Estado:** ✅ Desplegado en producción · smoke tests end-to-end pasaron
+
+#### Recursos AWS
+
+| Recurso | Identificador |
+|---|---|
+| SSM SecureString | `/acacia/admin/password-hash` |
+| SSM SecureString | `/acacia/admin/jwt-secret` (64 bytes random base64) |
+| Lambda POST | `acacia-admin-login` (timeout 15s · 256 MB) |
+| Lambda GET | `acacia-admin-me` |
+| Endpoint POST | `https://y0uumgj0b4.execute-api.us-east-1.amazonaws.com/prod/admin/login` |
+| Endpoint GET | `https://y0uumgj0b4.execute-api.us-east-1.amazonaws.com/prod/admin/me` |
+
+#### Backend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `backend/src/lib/auth.ts` 🆕 | `hashPassword` (scrypt N=16384), `verifyPassword` (timingSafeEqual), `signAdminToken`/`verifyAdminToken` (HS256 8h) |
+| `backend/src/lib/ssm.ts` 🆕 | `getSecureParameter()` con cache por módulo (sobrevive entre invocaciones del contenedor Lambda) |
+| `backend/src/lib/adminAuth.ts` 🆕 | `requireAdmin(event)` — middleware reusable para futuros endpoints admin |
+| `backend/src/handlers/adminLogin.ts` 🆕 | POST /admin/login · padding 250 ms anti-timing · validación 4-200 chars |
+| `backend/src/handlers/adminMe.ts` 🆕 | GET /admin/me · heartbeat para validar token vivo |
+| `backend/package.json` | +deps `jsonwebtoken@^9`, `@aws-sdk/client-ssm`, `@types/jsonwebtoken` |
+
+#### Frontend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `frontend/src/api/admin.ts` 🆕 | `adminLogin()`, `adminHeartbeat()` |
+| `frontend/src/lib/auth.tsx` 🆕 | `AuthProvider` + `useAuth()` · persiste token en `localStorage` · valida heartbeat al cargar |
+| `frontend/src/components/RequireAdmin.tsx` 🆕 | Route guard con `<Outlet>` · redirige a `/admin/login` con `state.from` |
+| `frontend/src/pages/admin/AdminLogin.tsx` 🆕 | Form de password · navega a destino original tras login |
+| `frontend/src/pages/admin/AdminLayout.tsx` 🆕 | Sub-header admin propio · nav responsive · botón salir |
+| `frontend/src/pages/admin/AdminHome.tsx` 🆕 | Dashboard de bienvenida con 3 tarjetas (Cotizaciones · Productos · Slides) |
+| `frontend/src/App.tsx` | + `AuthProvider` · + rutas `/admin/*` · oculta Header/Footer público en `/admin/*` |
+
+#### Infra (SAM)
+
+| Cambio en `template.yaml` |
+|---|
+| + Parámetros `AdminPasswordHashParam`, `JwtSecretParam` (defaults `/acacia/admin/*`) |
+| + Env vars `ADMIN_PASSWORD_HASH_PARAM`, `JWT_SECRET_PARAM` en Globals |
+| + `AdminLoginFunction` con IAM `ssm:GetParameter` + `kms:Decrypt` (alias/aws/ssm) |
+| + `AdminMeFunction` con IAM mínima (solo JWT secret) |
+| + Rutas `POST /admin/login`, `GET /admin/me` |
+
+#### Script de inicialización
+
+`scripts/set_admin_password.sh` (idempotente):
+1. Pide password (silencioso) + confirmación
+2. Genera hash scrypt con Node nativo
+3. Genera JWT secret aleatorio (64 bytes base64)
+4. `aws ssm put-parameter` con `--overwrite` para ambos
+
+#### Seguridad implementada
+
+- ✅ **Password hash con scrypt** (N=16384, r=8, p=1, salt 16B, key 64B)
+- ✅ **Comparación tiempo constante** con `timingSafeEqual`
+- ✅ **Padding mínimo 250ms** en endpoint login (anti-timing)
+- ✅ **JWT HS256** con secret aleatorio en SSM SecureString
+- ✅ **Token TTL 8h** (suficiente para una sesión de trabajo, no eterno)
+- ✅ **SSM cache en módulo Lambda** (un solo `GetParameter` por cold start)
+- ✅ **IAM mínima**: cada lambda solo accede a los parámetros que necesita
+- ✅ **CORS estricto** con `Authorization` header allow-listed
+- ⏳ **Pendiente**: rate limiting en endpoint /admin/login (API GW Usage Plan)
+- ⏳ **Pendiente**: rotación automática del JWT secret
+
+#### Bug encontrado durante el sprint
+
+> **`AccessDeniedException` en `ssm:GetParameter`** — usé el helper SAM `SSMParameterReadPolicy` con un nombre de parámetro que empezaba con `/`. SAM construyó el ARN con doble slash, fallando el match. Fix: reemplazar por `Statement` policy directa con ARN construido manualmente (`arn:aws:ssm:...:parameter${ParamName}`).
+
+#### Smoke tests producción
+
+```
+✅ POST /admin/login  password incorrecto → 401 UNAUTHORIZED
+✅ POST /admin/login  password correcto   → 200 { token, expiresAt }
+✅ GET  /admin/me     sin token           → 401 Token faltante
+✅ GET  /admin/me     token válido        → 200 { role: "admin" }
+✅ GET  /admin/me     token basura        → 401 Token inválido o expirado
+✅ /admin             → SPA carga · RequireAdmin redirige a /admin/login
+✅ /admin/login       → form renderiza
+✅ Rutas públicas /, /catalogo, /cotizaciones, /contacto → 200 sin regresión
+```
+
+#### ⚠️ Credenciales temporales
+
+Tras el deploy se sembró un **password temporal** para validar end-to-end:
+
+```
+Password TEMPORAL: acacia-temporal-cambiar-ya
+```
+
+**Acción requerida de Oscar:** correr `bash scripts/set_admin_password.sh` y poner el password definitivo.
 
 ---
 

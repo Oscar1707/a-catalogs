@@ -9,10 +9,13 @@ Globals:
     MemorySize: 256
     Environment:
       Variables:
-        TABLE_NAME:         !Ref ProductsTable
-        QUOTES_TABLE_NAME:  !Ref QuotesTable
-        IMAGES_BUCKET:      !Ref ImagesBucket
-        CLOUDFRONT_DOMAIN:  !Ref CloudFrontDomain
+        TABLE_NAME:                 !Ref ProductsTable
+        QUOTES_TABLE_NAME:          !Ref QuotesTable
+        IMAGES_BUCKET:              !Ref ImagesBucket
+        CLOUDFRONT_DOMAIN:          !Ref CloudFrontDomain
+        NOTIFICATION_EMAIL:         !Ref NotificationEmail
+        ADMIN_PASSWORD_HASH_PARAM:  !Ref AdminPasswordHashParam
+        JWT_SECRET_PARAM:           !Ref JwtSecretParam
 
 Parameters:
   Environment:
@@ -24,6 +27,21 @@ Parameters:
     Type: String
     Default: ""
     Description: "CloudFront domain (e.g. abc123.cloudfront.net). Empty on first deploy; update after stack creation."
+
+  NotificationEmail:
+    Type: String
+    Default: "ozkarxbox@gmail.com"
+    Description: "Email verificado en SES que recibe alertas de nuevas cotizaciones."
+
+  AdminPasswordHashParam:
+    Type: String
+    Default: "/acacia/admin/password-hash"
+    Description: "Nombre del SSM SecureString con el hash scrypt del password admin."
+
+  JwtSecretParam:
+    Type: String
+    Default: "/acacia/admin/jwt-secret"
+    Description: "Nombre del SSM SecureString con el secreto HS256 para firmar JWTs admin."
 
 Resources:
 
@@ -204,6 +222,10 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref QuotesTable
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
       Events:
         PostQuote:
           Type: Api
@@ -237,6 +259,73 @@ Resources:
           Properties:
             RestApiId: !Ref CatalogApi
             Path: /quotes/{reference}
+            Method: GET
+
+  # ─── Lambda: POST /admin/login ───────────────────────────────────────────────
+  AdminLoginFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminLogin.ts
+    Properties:
+      FunctionName: acacia-admin-login
+      CodeUri: backend/
+      Handler: src/handlers/adminLogin.handler
+      Description: "Login admin — valida password contra hash en SSM y firma JWT"
+      Timeout: 15
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource:
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${AdminPasswordHashParam}"
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        PostLogin:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/login
+            Method: POST
+
+  # ─── Lambda: GET /admin/me ───────────────────────────────────────────────────
+  AdminMeFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminMe.ts
+    Properties:
+      FunctionName: acacia-admin-me
+      CodeUri: backend/
+      Handler: src/handlers/adminMe.handler
+      Description: "Heartbeat admin — verifica que el JWT siga válido"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        GetMe:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/me
             Method: GET
 
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
