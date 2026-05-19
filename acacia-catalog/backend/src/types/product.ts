@@ -59,10 +59,33 @@ export interface ProductItem {
   whatsappMessage: string; // "Hola, me interesa el modelo VORDEN..."
 
   // Control
-  active:    boolean; // false = no aparece en la API
-  order:     number;  // 1, 2, 3... — orden en el catálogo  ← RESERVADO en DynamoDB
-  createdAt: string;  // ISO 8601
-  updatedAt: string;  // ISO 8601
+  active:    boolean;  // false = no aparece en la API pública
+  featured?: boolean;  // true = aparece en "Piezas destacadas" del Home
+  order:     number;   // 1, 2, 3... — orden en el catálogo  ← RESERVADO en DynamoDB
+  createdAt: string;   // ISO 8601
+  updatedAt: string;   // ISO 8601
+}
+
+// ── Shape de actualización admin (todos los campos opcionales) ───────────────
+// Whitelist de lo que se puede editar desde el panel admin.
+// id/slug/ref/skuRef/createdAt/updatedAt no se editan (identifiers + auto).
+// images/coverImage se gestionan vía endpoints de upload (Sprint A4).
+// tallas/prices/specs se editan en un sub-sprint futuro (estructura compleja).
+export interface ProductUpdateInput {
+  name?:              string;
+  tagline?:           string;
+  description?:       string;
+  categoria?:         string;
+  family?:            string;
+  linea?:             string;
+  materialPrincipal?: string;
+  acabado?:           string;
+  iluminacion?:       string;
+  instalacion?:       string;
+  whatsappMessage?:   string;
+  order?:             number;
+  active?:            boolean;
+  featured?:          boolean;
 }
 
 // Shape público — sin claves internas de DynamoDB

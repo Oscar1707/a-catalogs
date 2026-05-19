@@ -17,10 +17,14 @@ export function Home() {
   });
 
   // Productos destacados: primeros 3 del primer family.
-  // TODO Sprint 2: usar flag `featured: true` desde DynamoDB.
-  const featured = data
-    ? Object.values(data).flat().slice(0, 3)
-    : [];
+  // Destacados: usa el flag `featured` de DynamoDB; si no hay ninguno
+  // marcado, cae al fallback de los primeros 3 ordenados.
+  const featured = (() => {
+    if (!data) return [];
+    const all = Object.values(data).flat();
+    const marked = all.filter((p) => p.featured);
+    return marked.length > 0 ? marked : all.slice(0, 3);
+  })();
 
   return (
     <main className="mx-auto max-w-7xl px-6 md:px-10">

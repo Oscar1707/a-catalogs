@@ -1,4 +1,5 @@
-// Mirror de backend/src/types/product.ts — mantener sincronizado.
+// admin/src/types/product.ts
+// Mirror exacto de backend/src/types/product.ts (sin claves internas).
 
 export interface TallaInfo {
   dimensiones: string;
@@ -49,21 +50,20 @@ export interface ProductPublic {
   updatedAt: string;
 }
 
-export type ProductsByFamily = Record<string, ProductPublic[]>;
-
-export interface ApiSuccess<T = unknown> {
-  ok:    true;
-  data:  T;
-  meta?: Record<string, unknown>;
+// Whitelist editable desde el panel (debe coincidir con backend ProductUpdateInput).
+export interface ProductUpdateInput {
+  name?:              string;
+  tagline?:           string;
+  description?:       string;
+  categoria?:         string;
+  family?:            string;
+  linea?:             string;
+  materialPrincipal?: string;
+  acabado?:           string;
+  iluminacion?:       string;
+  instalacion?:       string;
+  whatsappMessage?:   string;
+  order?:             number;
+  active?:            boolean;
+  featured?:          boolean;
 }
-
-export interface ApiError {
-  ok:    false;
-  error: {
-    code:      string;
-    message:   string;
-    requestId: string;
-  };
-}
-
-export type ApiResponse<T = unknown> = ApiSuccess<T> | ApiError;

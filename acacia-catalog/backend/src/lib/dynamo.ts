@@ -11,7 +11,7 @@ import {
   QueryCommand,
   UpdateCommand,
 }                                                            from '@aws-sdk/lib-dynamodb';
-import { ProductItem }                                       from '../types/product';
+import { ProductItem, ProductUpdateInput }                   from '../types/product';
 import { QuoteItem, NoteItem, QuoteStatus }                  from '../types/quote';
 import { SlideItem }                                         from '../types/slide';
 
@@ -45,7 +45,7 @@ export const PRODUCT_PROJECTION = [
   'tallaBase', 'tallas', 'prices',
   'images', 'coverImage',
   'whatsappNumber', 'whatsappMessage',
-  'active', '#order', 'createdAt', 'updatedAt',
+  'active', 'featured', '#order', 'createdAt', 'updatedAt',
 ].join(', ');
 
 // ── scanActiveProducts ────────────────────────────────────────────────────────
@@ -87,6 +87,82 @@ export async function getProductById(id: string): Promise<ProductItem | null> {
   }));
 
   return (res.Item as ProductItem) ?? null;
+}
+
+// ── scanAllProducts (admin) ──────────────────────────────────────────────────
+// Devuelve TODOS los productos (incluyendo inactivos). El listado público
+// usa scanActiveProducts; este es solo para el panel admin.
+export async function scanAllProducts(): Promise<ProductItem[]> {
+  const items: ProductItem[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix) AND SK = :sk',
+      ExpressionAttributeValues: { ':prefix': 'PRODUCT#', ':sk': 'METADATA' },
+      ProjectionExpression:      PRODUCT_PROJECTION,
+      ExpressionAttributeNames:  EXPR_NAMES,
+      ExclusiveStartKey:         lastKey,
+    }));
+
+    items.push(...((res.Items ?? []) as ProductItem[]));
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+}
+
+// ── updateProduct (admin) ────────────────────────────────────────────────────
+// Construye dinámicamente UpdateExpression solo con los campos enviados.
+// Maneja palabras reservadas DynamoDB (name, ref, order, family).
+// Retorna el item completo actualizado.
+const RESERVED_FIELDS = new Set(['name', 'ref', 'order', 'family']);
+
+export async function updateProduct(
+  id: string,
+  patch: ProductUpdateInput,
+): Promise<ProductItem> {
+  const sets: string[] = [];
+  const exprValues: Record<string, unknown> = {};
+  const exprNames: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    // Para reserved words usamos placeholder #foo
+    if (RESERVED_FIELDS.has(key)) {
+      const nameKey  = `#${key}`;
+      const valueKey = `:${key}`;
+      exprNames[nameKey]   = key;
+      exprValues[valueKey] = value;
+      sets.push(`${nameKey} = ${valueKey}`);
+    } else {
+      const valueKey = `:${key}`;
+      exprValues[valueKey] = value;
+      sets.push(`${key} = ${valueKey}`);
+    }
+  }
+
+  // Siempre actualizar updatedAt
+  exprValues[':updatedAt'] = new Date().toISOString();
+  sets.push('updatedAt = :updatedAt');
+
+  if (sets.length === 1) {
+    // Solo updatedAt — no se enviaron campos válidos
+    throw new Error('NO_FIELDS_TO_UPDATE');
+  }
+
+  const res = await dynamo.send(new UpdateCommand({
+    TableName:                 TABLE,
+    Key:                       { PK: `PRODUCT#${id.toLowerCase()}`, SK: 'METADATA' },
+    UpdateExpression:          `SET ${sets.join(', ')}`,
+    ExpressionAttributeValues: exprValues,
+    ExpressionAttributeNames:  Object.keys(exprNames).length > 0 ? exprNames : undefined,
+    ConditionExpression:       'attribute_exists(PK)',
+    ReturnValues:              'ALL_NEW',
+  }));
+
+  return res.Attributes as ProductItem;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

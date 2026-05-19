@@ -7,6 +7,8 @@ import { Layout } from '@/pages/Layout';
 import { Home } from '@/pages/Home';
 import { Cotizaciones } from '@/pages/Cotizaciones';
 import { CotizacionDetail } from '@/pages/CotizacionDetail';
+import { Productos } from '@/pages/Productos';
+import { ProductoDetail } from '@/pages/ProductoDetail';
 
 // Cliente para futuras queries (cotizaciones, productos, slides...).
 const queryClient = new QueryClient({
@@ -33,9 +35,10 @@ export default function App() {
               <Route index                          element={<Home              />} />
               <Route path="cotizaciones"            element={<Cotizaciones      />} />
               <Route path="cotizaciones/:reference" element={<CotizacionDetail  />} />
-              {/* Sprints A3+:
-                  <Route path="productos" element={<Productos />} />
-                  <Route path="slides"    element={<Slides    />} />
+              <Route path="productos"               element={<Productos         />} />
+              <Route path="productos/:id"           element={<ProductoDetail    />} />
+              {/* Sprints A5+:
+                  <Route path="slides" element={<Slides />} />
               */}
             </Route>
           </Route>

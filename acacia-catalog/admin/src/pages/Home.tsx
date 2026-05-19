@@ -17,11 +17,11 @@ const SECTIONS = [
   },
   {
     label:    'Productos',
-    desc:     'Activar/desactivar piezas, editar datos, subir imágenes.',
+    desc:     'Activar/desactivar piezas, editar datos, marcar destacados.',
     to:       '/productos',
     icon:     LayoutGrid,
-    soon:     'Sprint A3',
-    enabled:  false,
+    soon:     'Disponible',
+    enabled:  true,
   },
   {
     label:    'Slides',

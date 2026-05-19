@@ -491,6 +491,108 @@ Resources:
             Path: /admin/quotes/{reference}/notes
             Method: POST
 
+  # ─── Lambda: GET /admin/products (Sprint A3) ─────────────────────────────────
+  AdminListProductsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListProducts.ts
+    Properties:
+      FunctionName: acacia-admin-list-products
+      CodeUri: backend/
+      Handler: src/handlers/adminListProducts.handler
+      Description: "Admin · listado completo de productos (incluye inactivos)"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListProducts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/products
+            Method: GET
+
+  # ─── Lambda: GET /admin/products/{id} (Sprint A3) ────────────────────────────
+  AdminGetProductFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminGetProduct.ts
+    Properties:
+      FunctionName: acacia-admin-get-product
+      CodeUri: backend/
+      Handler: src/handlers/adminGetProduct.handler
+      Description: "Admin · detalle de un producto por id"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        GetProduct:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/products/{id}
+            Method: GET
+
+  # ─── Lambda: PATCH /admin/products/{id} (Sprint A3) ──────────────────────────
+  AdminUpdateProductFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpdateProduct.ts
+    Properties:
+      FunctionName: acacia-admin-update-product
+      CodeUri: backend/
+      Handler: src/handlers/adminUpdateProduct.handler
+      Description: "Admin · actualiza campos editables de un producto"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpdateProduct:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/products/{id}
+            Method: PATCH
+
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl

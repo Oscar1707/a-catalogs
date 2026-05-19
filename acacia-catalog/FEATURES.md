@@ -17,6 +17,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
   - [Sprint A1 — Auth con JWT](#sprint-a1--auth-con-jwt)
   - [Sprint A1.5 — Migración a SPA independiente](#sprint-a15--migración-a-spa-independiente)
   - [Sprint A2 — Inbox de cotizaciones](#sprint-a2--inbox-de-cotizaciones)
+  - [Sprint A3 — CRUD productos](#sprint-a3--crud-productos)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -435,7 +436,7 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 |---|---|
 | Rama | `feature/site-expansion` |
 | Inicio | 2026-05-18 |
-| Estado | 🟢 Sprints A1 + A1.5 + A2 en producción · A3-A8 pendientes |
+| Estado | 🟢 Sprints A1 + A1.5 + A2 + A3 en producción · A4-A8 pendientes |
 | URL admin | https://d2ccwjnserochq.cloudfront.net |
 | URL público | https://d2pgrgppb9pktx.cloudfront.net (intacto) |
 
@@ -768,6 +769,128 @@ PK: QUOTE#ACW-2026-0001  SK: NOTE#2026-05-18T...#a1b2    ← nota interna
 | Admin JS | 319 KB | 353 KB (+34 KB nuevo código) |
 | Admin gzip | 103 KB | 111 KB |
 | Admin CSS | 13 KB | 20 KB |
+
+---
+
+### Sprint A3 — CRUD productos
+
+**Estado:** ✅ Desplegado en producción · 3 endpoints admin + flag `featured` activo
+
+#### Recursos AWS nuevos
+
+| Recurso | Identificador |
+|---|---|
+| Lambda GET | `acacia-admin-list-products` (incluye inactivos) |
+| Lambda GET | `acacia-admin-get-product` |
+| Lambda PATCH | `acacia-admin-update-product` |
+| Endpoint GET | `/admin/products` |
+| Endpoint GET | `/admin/products/{id}` |
+| Endpoint PATCH | `/admin/products/{id}` |
+
+#### Nuevo flag en producto: `featured`
+
+Se agregó `featured?: boolean` al schema. El frontend público lo usa así:
+
+```ts
+// Home: destacados desde DynamoDB con fallback a primeros 3
+const marked = all.filter((p) => p.featured);
+const featured = marked.length > 0 ? marked : all.slice(0, 3);
+```
+
+Esto permite que el admin marque qué piezas aparecen en "Piezas destacadas" del Home, manteniendo retrocompatibilidad: si nadie marca nada, se muestra una selección automática.
+
+#### Campos editables vía PATCH
+
+Whitelist explícita (defensa en profundidad — backend ignora cualquier otro campo):
+
+| Categoría | Campos |
+|---|---|
+| Contenido | `name`, `tagline`, `description`, `categoria` |
+| Clasificación | `family`, `linea` |
+| Material y técnica | `materialPrincipal`, `acabado`, `iluminacion`, `instalacion` |
+| Contacto | `whatsappMessage` |
+| Control | `order`, `active`, `featured` |
+
+**No editables en este sprint:**
+- Identificadores: `id`, `slug`, `ref`, `skuRef` (rara vez cambian)
+- Imágenes: `images`, `coverImage` (Sprint A4 → presigned URLs)
+- Estructuras complejas: `tallas`, `prices`, `specs` (sub-sprint futuro)
+- Auto: `createdAt`, `updatedAt`
+
+#### Backend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `backend/src/types/product.ts` | +`featured?: boolean` en `ProductItem` · +`ProductUpdateInput` (whitelist) |
+| `backend/src/lib/dynamo.ts` | +`featured` en `PRODUCT_PROJECTION` · +`scanAllProducts()` (sin filtro active) · +`updateProduct(id, patch)` con UpdateExpression dinámico que respeta reserved words |
+| `backend/src/handlers/adminListProducts.ts` 🆕 | Listado con counters (total/active/featured) |
+| `backend/src/handlers/adminGetProduct.ts` 🆕 | Detalle de un producto por id |
+| `backend/src/handlers/adminUpdateProduct.ts` 🆕 | Sanitización por tipo + whitelist + `ConditionExpression` 404 si no existe |
+
+#### Frontend público — cambios
+
+| Archivo | Cambio |
+|---|---|
+| `frontend/src/types/product.ts` | +`featured?: boolean` (mirror) |
+| `frontend/src/pages/Home.tsx` | Featured real con fallback a primeros 3 |
+
+#### Frontend admin — archivos nuevos
+
+| Archivo | Cambio |
+|---|---|
+| `admin/src/types/product.ts` 🆕 | Mirror completo |
+| `admin/src/api/products.ts` 🆕 | `listProducts`, `getProduct`, `updateProduct` |
+| `admin/src/pages/Productos.tsx` 🆕 | Lista con filtros (Todos/Activos/Inactivos/Destacados) · búsqueda · toggle rápido de active y featured con optimistic UI · tabla desktop / cards mobile |
+| `admin/src/pages/ProductoDetail.tsx` 🆕 | Form con bloques (Estado · Contenido · Clasificación · Material · WhatsApp) · sticky save bar con contador de cambios · diff inteligente (solo envía lo cambiado) · vista read-only para campos complejos |
+| `admin/src/App.tsx` | +rutas `/productos` y `/productos/:id` |
+| `admin/src/pages/Home.tsx` | Card de Productos habilitada (Sprint A3 → Disponible) |
+
+#### UX implementada
+
+**Lista de productos:**
+- 4 chips de filtro con contador (Todos · Activos · Inactivos · Destacados)
+- Búsqueda local por nombre, ref o familia
+- Thumbnail del producto en la tabla
+- **Toggle directo desde la lista**: activar/desactivar o marcar destacado sin entrar al detalle
+- **Optimistic UI**: el toggle actualiza el cache antes de la respuesta del servidor; rollback automático si falla
+- Tabla en desktop / cards en mobile
+- Botón "Ver público" en cada detalle abre la URL del catálogo en nueva pestaña
+
+**Edición de producto:**
+- Form dividido en bloques temáticos
+- **Diff inteligente**: solo se envían los campos modificados (no se reemplaza todo el item)
+- **Sticky save bar** al fondo: muestra "N cambios sin guardar" o "✓ Cambios guardados"
+- Disabled del botón si no hay cambios
+- Manejo de errores con mensaje inline
+- Read-only stats al final mostrando tallas/precios/specs/imágenes con badge "Sprint A4" para imágenes
+
+#### Seguridad
+
+- ✅ **Whitelist server-side** de campos editables (`ALLOWED_FIELDS` set)
+- ✅ **Sanitización por tipo**: boolean es boolean, number es number, string ≤ 5000 chars
+- ✅ **ConditionExpression `attribute_exists(PK)`** → 404 limpio si el producto fue borrado
+- ✅ **Reserved words handling**: `name`, `ref`, `order`, `family` usan ExpressionAttributeNames automáticamente
+- ✅ **Auth obligatorio** en los 3 endpoints (middleware `requireAdmin`)
+
+#### Smoke tests producción
+
+```
+✅ GET    /admin/products              sin token → 401
+✅ GET    /admin/products/{id}         sin token → 401
+✅ PATCH  /admin/products/{id}         sin token → 401
+✅ Admin SPA /productos                200
+✅ Admin SPA /productos/aca-tv-001     200
+✅ API público devuelve `featured`     14/14 productos
+✅ Público /, /catalogo, /catalogo/:slug — sin regresión
+```
+
+#### Bundles
+
+| | Antes A3 | Después A3 |
+|---|---|---|
+| Admin JS | 353 KB | 374 KB (+21 KB) |
+| Admin CSS | 20 KB | 22 KB |
+| Público JS | 370 KB | 379 KB (+9 KB) — solo el filtro featured |
 
 ---
 
