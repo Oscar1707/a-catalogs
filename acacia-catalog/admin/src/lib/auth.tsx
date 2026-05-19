@@ -1,8 +1,8 @@
-// frontend/src/lib/auth.tsx
-// Contexto de autenticación admin.
-// - Persiste el token en localStorage.
-// - Expone hooks: useAuth(), useRequireAdmin().
+// admin/src/lib/auth.tsx
+// Contexto de autenticación.
+// - Persiste token en localStorage.
 // - Verifica heartbeat al cargar para detectar tokens expirados.
+// - Expone hooks: useAuth().
 
 import {
   createContext,
@@ -32,14 +32,13 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>(() => {
-    // Hidratamos desde localStorage en el primer render
-    const token     = localStorage.getItem(STORAGE_KEY);
-    const expiresAt = localStorage.getItem(STORAGE_EXP);
-    return { token, expiresAt, ready: false };
-  });
+  const [state, setState] = useState<AuthState>(() => ({
+    token:     localStorage.getItem(STORAGE_KEY),
+    expiresAt: localStorage.getItem(STORAGE_EXP),
+    ready:     false,
+  }));
 
-  // Al cargar, validar heartbeat si hay token guardado.
+  // Valida heartbeat al cargar (si hay token persistido).
   useEffect(() => {
     if (!state.token) {
       setState((s) => ({ ...s, ready: true }));

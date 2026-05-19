@@ -1,5 +1,5 @@
-// frontend/src/pages/admin/AdminLogin.tsx
-// Pantalla de login del admin. Tono Acacia, mínima, sin distracciones.
+// admin/src/pages/Login.tsx
+// Pantalla de login. Tono Acacia, mínima, sin distracciones.
 
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
@@ -11,11 +11,11 @@ interface LocationState {
   from?: string;
 }
 
-export function AdminLogin() {
+export function Login() {
   const { token, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as LocationState | null)?.from ?? '/admin';
+  const from = (location.state as LocationState | null)?.from ?? '/';
 
   const [password, setPassword] = useState('');
   const [busy,     setBusy]     = useState(false);
@@ -62,7 +62,7 @@ export function AdminLogin() {
           className="text-3xl font-light leading-[1.1] text-bone md:text-4xl"
           style={{ letterSpacing: '-0.005em' }}
         >
-          Inicia sesión
+          Acacia · Admin
         </h1>
 
         <p className="mt-5 text-sm font-light leading-relaxed text-mute">

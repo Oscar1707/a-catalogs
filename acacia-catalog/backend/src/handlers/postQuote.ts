@@ -1,6 +1,7 @@
 // backend/src/handlers/postQuote.ts
-// POST /quotes — registra una nueva solicitud de cotización.
+// POST /quotes — registra una nueva solicitud de cotización y notifica por email.
 
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import { nextQuoteReference, putQuote }                   from '../lib/dynamo';
 import {
@@ -24,6 +25,10 @@ const HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 } as const;
 
+// ── SES ───────────────────────────────────────────────────────────────────────
+const ses              = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
+const NOTIFICATION_TO  = process.env.NOTIFICATION_EMAIL ?? '';
+
 // ── Códigos de error ──────────────────────────────────────────────────────────
 const ERR = {
   BAD_JSON:   'BAD_JSON',
@@ -38,7 +43,6 @@ function json(status: number, body: ApiResponse): APIGatewayProxyResult {
 }
 
 function normalizePhone(raw: string): string {
-  // Quita todo lo que no sean dígitos
   return raw.replace(/\D+/g, '');
 }
 
@@ -97,6 +101,142 @@ function validate(
       timeline:    trim(input.timeline),
     },
   };
+}
+
+// ── Email de notificación ─────────────────────────────────────────────────────
+async function sendNotificationEmail(item: QuoteItem): Promise<void> {
+  if (!NOTIFICATION_TO) {
+    console.warn('[postQuote] NOTIFICATION_EMAIL no configurado — omitiendo email.');
+    return;
+  }
+
+  const row = (label: string, value: string | undefined) =>
+    value ? `<tr><td style="padding:6px 12px 6px 0;color:#888;font-size:13px;white-space:nowrap">${label}</td><td style="padding:6px 0;font-size:13px;color:#1a1a18">${value}</td></tr>` : '';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f4f0;font-family:'Helvetica Neue',Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f4f0;padding:32px 16px">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e0dfd8;max-width:600px">
+
+        <!-- Header -->
+        <tr>
+          <td style="padding:28px 32px;border-bottom:1px solid #e8e6df">
+            <p style="margin:0;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:#b08a4e">
+              Acacia Woods
+            </p>
+            <h1 style="margin:8px 0 0;font-size:22px;font-weight:300;color:#1a1a18;letter-spacing:-0.01em">
+              Nueva solicitud de cotización
+            </h1>
+          </td>
+        </tr>
+
+        <!-- Referencia destacada -->
+        <tr>
+          <td style="padding:24px 32px;background:#fafaf7;border-bottom:1px solid #e8e6df">
+            <p style="margin:0 0 4px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#999">
+              Número de referencia
+            </p>
+            <p style="margin:0;font-size:28px;font-weight:300;color:#1a1a18;letter-spacing:0.05em">
+              ${item.reference}
+            </p>
+            <p style="margin:8px 0 0;font-size:12px;color:#999">
+              ${new Date(item.createdAt).toLocaleString('es-MX', {
+                dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Mexico_City',
+              })}
+            </p>
+          </td>
+        </tr>
+
+        <!-- Datos de contacto -->
+        <tr>
+          <td style="padding:24px 32px;border-bottom:1px solid #e8e6df">
+            <p style="margin:0 0 14px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#b08a4e">
+              Contacto
+            </p>
+            <table cellpadding="0" cellspacing="0">
+              ${row('Nombre',    item.name)}
+              ${row('Teléfono',  item.phone)}
+              ${row('Email',     item.email   || undefined)}
+              ${row('Dirección', item.address || undefined)}
+            </table>
+          </td>
+        </tr>
+
+        <!-- Datos del proyecto -->
+        <tr>
+          <td style="padding:24px 32px;border-bottom:1px solid #e8e6df">
+            <p style="margin:0 0 14px;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#b08a4e">
+              Proyecto
+            </p>
+            <table cellpadding="0" cellspacing="0">
+              ${row('Tipo',        item.projectType)}
+              ${row('Descripción', item.description)}
+              ${row('Dimensiones', item.dimensions || undefined)}
+              ${row('Acabado',     item.finish     || undefined)}
+              ${row('Material',    item.material   || undefined)}
+              ${row('Referencia',  item.visualRef  || undefined)}
+              ${row('Presupuesto', item.budget     || undefined)}
+              ${row('Plazo',       item.timeline   || undefined)}
+            </table>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px">
+            <p style="margin:0;font-size:11px;color:#aaa">
+              Acacia Woods · Hecho a mano en México
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `[Acacia Woods] Nueva cotización — ${item.reference}`,
+    '',
+    `Referencia: ${item.reference}`,
+    `Fecha: ${new Date(item.createdAt).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })}`,
+    '',
+    '── Contacto ──',
+    `Nombre:    ${item.name}`,
+    `Teléfono:  ${item.phone}`,
+    item.email   ? `Email:     ${item.email}`   : '',
+    item.address ? `Dirección: ${item.address}` : '',
+    '',
+    '── Proyecto ──',
+    `Tipo:        ${item.projectType}`,
+    `Descripción: ${item.description}`,
+    item.dimensions ? `Dimensiones: ${item.dimensions}` : '',
+    item.finish     ? `Acabado:     ${item.finish}`     : '',
+    item.material   ? `Material:    ${item.material}`   : '',
+    item.visualRef  ? `Referencia:  ${item.visualRef}`  : '',
+    item.budget     ? `Presupuesto: ${item.budget}`     : '',
+    item.timeline   ? `Plazo:       ${item.timeline}`   : '',
+  ].filter((l) => l !== undefined).join('\n');
+
+  await ses.send(new SendEmailCommand({
+    Source:      NOTIFICATION_TO,
+    Destination: { ToAddresses: [NOTIFICATION_TO] },
+    Message: {
+      Subject: {
+        Charset: 'UTF-8',
+        Data:    `[Acacia Woods] Nueva solicitud — ${item.projectType} · ${item.name}`,
+      },
+      Body: {
+        Html: { Charset: 'UTF-8', Data: html },
+        Text: { Charset: 'UTF-8', Data: text },
+      },
+    },
+  }));
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -158,10 +298,19 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       updatedAt:   now,
     };
 
-    // 4. Persistir
+    // 4. Persistir en DynamoDB
     await putQuote(item);
 
-    // 5. Responder con referencia
+    // 5. Notificar por email (fire-and-forget: no bloquea la respuesta al cliente)
+    sendNotificationEmail(item).catch((err) => {
+      console.error('[postQuote] email error (non-fatal)', {
+        requestId,
+        reference,
+        error: err instanceof Error ? err.message : err,
+      });
+    });
+
+    // 6. Responder con referencia
     const result: QuoteCreateResult = {
       reference,
       status:    item.status,

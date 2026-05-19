@@ -1,6 +1,6 @@
-// frontend/src/pages/admin/AdminHome.tsx
-// Dashboard inicial del admin. Por ahora muestra accesos a las secciones
-// que vendrán en próximos sprints.
+// admin/src/pages/Home.tsx
+// Dashboard inicial del admin. Cards de acceso a las secciones que vienen
+// en próximos sprints.
 
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -10,29 +10,29 @@ const SECTIONS = [
   {
     label: 'Cotizaciones',
     desc:  'Ver e ir gestionando las cotizaciones recibidas.',
-    to:    '/admin/cotizaciones',
+    to:    '/cotizaciones',
     icon:  FileText,
     soon:  'Sprint A2',
   },
   {
     label: 'Productos',
     desc:  'Activar/desactivar piezas, editar datos, subir imágenes.',
-    to:    '/admin/productos',
+    to:    '/productos',
     icon:  LayoutGrid,
     soon:  'Sprint A3',
   },
   {
     label: 'Slides',
     desc:  'Carrusel de inicio. Configurar acción del botón, reordenar.',
-    to:    '/admin/slides',
+    to:    '/slides',
     icon:  Sliders,
     soon:  'Sprint A5',
   },
 ] as const;
 
-export function AdminHome() {
+export function Home() {
   return (
-    <main className="mx-auto max-w-7xl px-6 md:px-10">
+    <div className="mx-auto max-w-7xl px-6 md:px-10">
       <section className="border-b border-line/40 py-16 md:py-20">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -46,7 +46,7 @@ export function AdminHome() {
             className="text-3xl font-light leading-[1.1] text-bone md:text-4xl"
             style={{ letterSpacing: '-0.005em' }}
           >
-            Panel de administración
+            Panel administrativo
           </h1>
           <p className="mt-5 max-w-xl text-sm font-light leading-relaxed text-mute">
             Desde aquí gestionas el catálogo público, las cotizaciones que
@@ -102,6 +102,6 @@ export function AdminHome() {
           completen los próximos sprints del panel admin.
         </p>
       </section>
-    </main>
+    </div>
   );
 }

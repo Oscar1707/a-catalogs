@@ -12,6 +12,20 @@
     <title>Acacia · designed for the quiet</title>
   </head>
   <body>
+    <script>
+      // Aplica el tema antes de pintar para evitar flash.
+      (function () {
+        try {
+          var stored = localStorage.getItem('acacia-theme');
+          var theme  = (stored === 'dark' || stored === 'light')
+            ? stored
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

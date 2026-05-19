@@ -72,6 +72,33 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
+  # ─── S3: Admin SPA (privado — solo accesible via CloudFront admin OAC) ───────
+  AdminSpaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: acacia-admin-spa
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:        true
+        BlockPublicPolicy:      true
+        IgnorePublicAcls:       true
+        RestrictPublicBuckets:  true
+
+  AdminSpaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: AdminCloudFrontDistribution
+    Properties:
+      Bucket: !Ref AdminSpaBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${AdminSpaBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${AdminCloudFrontDistribution}"
+
   # ─── S3: Imágenes de productos (lectura pública) ─────────────────────────────
   ImagesBucket:
     Type: AWS::S3::Bucket
@@ -386,6 +413,49 @@ Resources:
             ResponseCode: 200
             ResponsePagePath: /index.html
 
+  # ─── CloudFront OAC (admin) ──────────────────────────────────────────────────
+  AdminCloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: acacia-admin-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ─── CloudFront Distribution (admin) ─────────────────────────────────────────
+  # Distribución totalmente independiente del sitio público.
+  # Bundle admin queda aislado · permite deploys independientes · habilita
+  # robots noindex y eventualmente WAF/signed-cookies a futuro.
+  AdminCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        Comment: "Acacia Admin — panel privado"
+        Origins:
+          - Id: AdminSpaOrigin
+            DomainName: !GetAtt AdminSpaBucket.RegionalDomainName
+            S3OriginConfig: {}
+            OriginAccessControlId: !GetAtt AdminCloudFrontOAC.Id
+
+        DefaultCacheBehavior:
+          TargetOriginId: AdminSpaOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          AllowedMethods: [GET, HEAD]
+
+        # SPA routing para React Router del admin
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
 # ─── Outputs ─────────────────────────────────────────────────────────────────
 Outputs:
   CloudFrontURL:
@@ -399,6 +469,18 @@ Outputs:
   DistributionId:
     Description: "ID CloudFront — usar para invalidaciones después de deploy del SPA"
     Value: !Ref CloudFrontDistribution
+
+  AdminCloudFrontURL:
+    Description: "URL del panel admin (privado, no indexable)"
+    Value: !Sub "https://${AdminCloudFrontDistribution.DomainName}"
+
+  AdminDistributionId:
+    Description: "ID CloudFront del admin — usar para invalidaciones"
+    Value: !Ref AdminCloudFrontDistribution
+
+  AdminSpaBucketName:
+    Description: "Bucket S3 del admin SPA"
+    Value: !Ref AdminSpaBucket
 
   SpaBucketName:
     Description: "Bucket S3 del SPA — destino de aws s3 sync"

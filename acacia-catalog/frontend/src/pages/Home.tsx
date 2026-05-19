@@ -24,8 +24,11 @@ export function Home() {
 
   return (
     <main className="mx-auto max-w-7xl px-6 md:px-10">
+      {/* ── Carrusel ────────────────────────────────────── */}
+      <CarouselSection />
+
       {/* ── Hero ─────────────────────────────────────────── */}
-      <section className="border-b border-line/40 py-24 md:py-32">
+      <section className="border-t border-line/40 py-24 md:py-32">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -65,9 +68,6 @@ export function Home() {
           </div>
         </motion.div>
       </section>
-
-      {/* ── Carrusel ────────────────────────────────────── */}
-      <CarouselSection />
 
       {/* ── Destacados ──────────────────────────────────── */}
       {featured.length > 0 && (
@@ -121,7 +121,7 @@ function CarouselSection() {
   // mostramos un placeholder discreto o nada (graceful degradation).
   if (isPending) {
     return (
-      <section className="border-t border-line/40 py-20 md:py-28">
+      <section className="pt-10 pb-20 md:pt-12 md:pb-28">
         <div className="flex aspect-[16/7] items-center justify-center border border-line/40 bg-ink-soft">
           <span className="text-[11px] font-light uppercase text-mute tracking-[0.3em]">
             Cargando destacados
@@ -134,7 +134,7 @@ function CarouselSection() {
   if (isError || !data || data.length === 0) return null;
 
   return (
-    <section className="border-t border-line/40 py-20 md:py-28">
+    <section className="pt-10 pb-20 md:pt-12 md:pb-28">
       <Carousel slides={data} />
     </section>
   );

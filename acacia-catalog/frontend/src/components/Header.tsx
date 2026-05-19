@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const NAV_ITEMS = [
   { label: 'Inicio',       to: '/'             },
@@ -78,19 +79,23 @@ export function Header() {
           designed for the quiet
         </p>
 
-        {/* ── Botón hamburguesa (mobile) ───────────────────── */}
-        <button
-          type="button"
-          aria-label={open ? 'Cerrar menú' : 'Abrir menú'}
-          aria-expanded={open}
-          aria-controls="mobile-nav"
-          onClick={() => setOpen((v) => !v)}
-          className="text-bone md:hidden"
-        >
-          {open
-            ? <X    size={22} strokeWidth={1.2} />
-            : <Menu size={22} strokeWidth={1.2} />}
-        </button>
+        {/* ── Acciones (theme + hamburguesa) ───────────────── */}
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+
+          <button
+            type="button"
+            aria-label={open ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={open}
+            aria-controls="mobile-nav"
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex h-8 w-8 items-center justify-center text-bone md:hidden"
+          >
+            {open
+              ? <X    size={22} strokeWidth={1.2} />
+              : <Menu size={22} strokeWidth={1.2} />}
+          </button>
+        </div>
       </div>
 
       {/* ── Drawer mobile ──────────────────────────────────── */}

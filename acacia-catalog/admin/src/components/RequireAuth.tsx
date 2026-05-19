@@ -1,12 +1,10 @@
-// frontend/src/components/RequireAdmin.tsx
-// Route guard: si no hay token válido, redirige a /admin/login.
-// Mientras el AuthProvider verifica el heartbeat (ready=false),
-// mostramos un placeholder discreto para evitar parpadeos.
+// admin/src/components/RequireAuth.tsx
+// Route guard. Si no hay token válido redirige a /login.
 
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 
-export function RequireAdmin() {
+export function RequireAuth() {
   const { token, ready } = useAuth();
   const location = useLocation();
 
@@ -22,11 +20,7 @@ export function RequireAdmin() {
 
   if (!token) {
     return (
-      <Navigate
-        to="/admin/login"
-        replace
-        state={{ from: location.pathname }}
-      />
+      <Navigate to="/login" replace state={{ from: location.pathname }} />
     );
   }
 

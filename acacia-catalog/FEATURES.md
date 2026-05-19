@@ -15,6 +15,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
   - [Sprint 9 — Páginas de detalle de producto](#sprint-9--páginas-de-detalle-de-producto)
 - [Feature 02 · Panel de administración](#feature-02--panel-de-administración)
   - [Sprint A1 — Auth con JWT](#sprint-a1--auth-con-jwt)
+  - [Sprint A1.5 — Migración a SPA independiente](#sprint-a15--migración-a-spa-independiente)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -433,17 +434,19 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 |---|---|
 | Rama | `feature/site-expansion` |
 | Inicio | 2026-05-18 |
-| Estado | 🟢 Sprint A1 en producción · A2-A8 pendientes |
-| URL | `https://d2pgrgppb9pktx.cloudfront.net/admin` |
+| Estado | 🟢 Sprint A1 + A1.5 en producción · A2-A8 pendientes |
+| URL admin | https://d2ccwjnserochq.cloudfront.net |
+| URL público | https://d2pgrgppb9pktx.cloudfront.net (intacto) |
 
 ### Decisiones arquitectónicas confirmadas
 
-- **Ubicación**: ruta `/admin/*` del mismo SPA (no subdominio separado)
+- **Ubicación**: **SPA independiente** en CloudFront separado (no `/admin/*` del público)
 - **Auth**: password único + JWT HS256 (no Cognito) — más simple para 1 admin
 - **Storage de credenciales**: AWS SSM Parameter Store SecureString (cifrado por KMS)
 - **Misma API Gateway** con endpoints `/admin/*` protegidos por middleware
 - **Token storage en frontend**: localStorage (admin no expuesto a contenido de usuario)
 - **TTL del token**: 8 horas
+- **`<meta name="robots" content="noindex,nofollow">`** en admin para evitar indexación
 
 ### Sprint A1 — Auth con JWT
 
@@ -531,15 +534,126 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 ✅ Rutas públicas /, /catalogo, /cotizaciones, /contacto → 200 sin regresión
 ```
 
-#### ⚠️ Credenciales temporales
+---
 
-Tras el deploy se sembró un **password temporal** para validar end-to-end:
+### Sprint A1.5 — Migración a SPA independiente
+
+**Estado:** ✅ Desplegado en producción · ambos sitios online · auth flow verificado
+
+#### Por qué se migró
+
+En el Sprint A1 el admin vivía como ruta `/admin/*` dentro del SPA público. Esto tenía 3 problemas:
+
+1. **Bundle público inflado** — todo el código admin viajaba al usuario final
+2. **Deploys acoplados** — cualquier cambio admin requería redesplegar el público
+3. **Sin aislamiento real** — no era "independiente" como pediste
+
+#### Solución
+
+Proyecto SPA **completamente independiente** en `admin/` con:
+
+- Su propio `package.json`, Vite config, TypeScript config
+- Su propio bucket S3 (`acacia-admin-spa`)
+- Su propio CloudFront distribution (`EOP0HS9U0XUUZ`)
+- Su propio deploy script (`admin/scripts/deploy.sh`)
+- Mismo backend (cero duplicación de API ni Lambdas)
+
+#### Recursos AWS nuevos
+
+| Recurso | Identificador |
+|---|---|
+| S3 bucket admin | `acacia-admin-spa` (privado · OAC) |
+| CloudFront OAC | `acacia-admin-oac` |
+| CloudFront Distribution | `EOP0HS9U0XUUZ` |
+| URL pública admin | https://d2ccwjnserochq.cloudfront.net |
+
+#### Estructura nueva
 
 ```
-Password TEMPORAL: acacia-temporal-cambiar-ya
+acacia-catalog/
+├── backend/        ← sin cambios (API única)
+├── frontend/       ← sitio público (limpio de admin)
+└── admin/          🆕
+    ├── package.json
+    ├── vite.config.ts (puerto dev 5180)
+    ├── tsconfig.*.json
+    ├── index.html (con <meta robots noindex>)
+    ├── scripts/deploy.sh
+    └── src/
+        ├── api/admin.ts
+        ├── lib/auth.tsx
+        ├── components/RequireAuth.tsx
+        ├── pages/{Login,Layout,Home}.tsx
+        ├── styles/globals.css (mismos brand tokens)
+        ├── App.tsx
+        └── main.tsx
 ```
 
-**Acción requerida de Oscar:** correr `bash scripts/set_admin_password.sh` y poner el password definitivo.
+#### Cambios en SAM template
+
+```yaml
++ AdminSpaBucket           # bucket S3 privado para admin
++ AdminSpaBucketPolicy     # OAC restringe acceso a CloudFront admin
++ AdminCloudFrontOAC       # OAC dedicado
++ AdminCloudFrontDistribution  # distribution independiente
++ AdminCloudFrontURL       # output
++ AdminDistributionId      # output (usado por admin/scripts/deploy.sh)
++ AdminSpaBucketName       # output
+```
+
+#### Limpieza en frontend público
+
+- ❌ `frontend/src/pages/admin/` (toda la carpeta)
+- ❌ `frontend/src/lib/auth.tsx`
+- ❌ `frontend/src/api/admin.ts`
+- ❌ `frontend/src/components/RequireAdmin.tsx`
+- ✏️ `frontend/src/App.tsx` (quitar `AuthProvider`, rutas admin, lógica de ocultar Header)
+
+#### Bundles comparativos (post-pivot)
+
+| SPA | JS bundle | CSS | gzip |
+|---|---|---|---|
+| Público | 370 KB | 25 KB | 115 KB JS · 5 KB CSS |
+| **Admin** | **319 KB** | **13 KB** | **103 KB JS · 4 KB CSS** |
+
+El admin es más liviano que el público porque no carga ProductCard, Carousel, ProductDetail, ThemeProvider, etc.
+
+#### Deploy independiente
+
+```bash
+# Solo público
+cd frontend && npm run deploy
+
+# Solo admin
+cd admin && npm run deploy
+```
+
+Los dos no se pisan — invalidan distributions distintas.
+
+#### Smoke tests producción (post-pivot)
+
+```
+SITIO PÚBLICO (sin código admin)
+  ✅ /              200
+  ✅ /catalogo      200
+  ✅ /cotizaciones  200
+  ✅ /contacto      200
+
+ADMIN (independiente)
+  ✅ /              200  (RequireAuth redirige a /login si sin token)
+  ✅ /login         200  (form renderiza)
+  ✅ /cotizaciones  200  (placeholder, viene en A2)
+  ✅ <meta name="robots" content="noindex,nofollow"> presente
+
+API
+  ✅ POST /admin/login  password incorrecto → 401
+  ✅ GET  /admin/me     sin token           → 401
+```
+
+#### Costo adicional
+- S3 bucket admin: ~$0 (< 400 KB de assets)
+- CloudFront admin: incluido en free tier 50 GB/mes
+- **Total adicional: $0**
 
 ---
 
