@@ -8,10 +8,11 @@ import {
   ScanCommand,
   GetCommand,
   PutCommand,
+  QueryCommand,
   UpdateCommand,
 }                                                            from '@aws-sdk/lib-dynamodb';
 import { ProductItem }                                       from '../types/product';
-import { QuoteItem }                                         from '../types/quote';
+import { QuoteItem, NoteItem, QuoteStatus }                  from '../types/quote';
 import { SlideItem }                                         from '../types/slide';
 
 // ── Cliente singleton ──────────────────────────────────────────────────────────
@@ -184,4 +185,132 @@ export async function getQuoteByReference(
   }));
 
   return (res.Item as QuoteItem) ?? null;
+}
+
+// ── scanAllQuotes (admin) ────────────────────────────────────────────────────
+// Devuelve todas las cotizaciones (solo METADATA — no notas).
+// Filtro opcional por status. Ordena en memoria por createdAt desc.
+//
+// Nota MVP: para alto volumen migrar a GSI por status.
+export async function scanAllQuotes(
+  status?: QuoteStatus,
+): Promise<QuoteItem[]> {
+  const items: QuoteItem[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  const filterParts = ['begins_with(PK, :pk)', 'SK = :sk'];
+  const exprValues: Record<string, unknown> = {
+    ':pk': 'QUOTE#',
+    ':sk': 'METADATA',
+  };
+
+  if (status) {
+    filterParts.push('#st = :status');
+    exprValues[':status'] = status;
+  }
+
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 QUOTES_TABLE,
+      FilterExpression:          filterParts.join(' AND '),
+      ExpressionAttributeValues: exprValues,
+      ExpressionAttributeNames:  status ? { '#st': 'status' } : undefined,
+      ExclusiveStartKey:         lastKey,
+    }));
+
+    items.push(...((res.Items ?? []) as QuoteItem[]));
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  // Más reciente primero
+  return items.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
+
+// ── updateQuoteStatus (admin) ────────────────────────────────────────────────
+// Actualiza el status de una cotización + updatedAt. Con ConditionExpression
+// para fallar si la referencia no existe.
+export async function updateQuoteStatus(
+  reference: string,
+  status: QuoteStatus,
+): Promise<QuoteItem> {
+  const now = new Date().toISOString();
+
+  const res = await dynamo.send(new UpdateCommand({
+    TableName:                 QUOTES_TABLE,
+    Key:                       { PK: `QUOTE#${reference}`, SK: 'METADATA' },
+    UpdateExpression:          'SET #st = :s, updatedAt = :u',
+    ExpressionAttributeNames:  { '#st': 'status' },
+    ExpressionAttributeValues: { ':s': status, ':u': now },
+    ConditionExpression:       'attribute_exists(PK)',
+    ReturnValues:              'ALL_NEW',
+  }));
+
+  return res.Attributes as QuoteItem;
+}
+
+// ── getQuoteNotes (admin) ────────────────────────────────────────────────────
+// Query por PK con SK begins_with NOTE# — devuelve notas en orden cronológico.
+export async function getQuoteNotes(reference: string): Promise<NoteItem[]> {
+  const items: NoteItem[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await dynamo.send(new QueryCommand({
+      TableName:                 QUOTES_TABLE,
+      KeyConditionExpression:    'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: {
+        ':pk': `QUOTE#${reference}`,
+        ':sk': 'NOTE#',
+      },
+      ExclusiveStartKey:         lastKey,
+    }));
+
+    items.push(...((res.Items ?? []) as NoteItem[]));
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items;
+}
+
+// ── addQuoteNote (admin) ─────────────────────────────────────────────────────
+// Inserta una nueva nota. El timestamp ISO sirve como SK + id.
+// Si dos notas se crean en el mismo ms, el segundo recibe sufijo random
+// para evitar colisión en SK (extremadamente improbable pero garantizado).
+export async function addQuoteNote(
+  reference: string,
+  text: string,
+): Promise<NoteItem> {
+  const now = new Date().toISOString();
+  // Sufijo random para evitar colisión en SK con notas creadas en el mismo ms
+  const suffix = Math.random().toString(36).slice(2, 6);
+  const id = `${now}#${suffix}`;
+
+  const item: NoteItem = {
+    PK:        `QUOTE#${reference}`,
+    SK:        `NOTE#${id}`,
+    id,
+    text,
+    author:    'admin',
+    createdAt: now,
+  };
+
+  await dynamo.send(new PutCommand({
+    TableName:           QUOTES_TABLE,
+    Item:                item,
+    ConditionExpression: 'attribute_not_exists(SK)',
+  }));
+
+  // Actualiza updatedAt en la metadata (sin tocar el status)
+  await dynamo.send(new UpdateCommand({
+    TableName:                 QUOTES_TABLE,
+    Key:                       { PK: `QUOTE#${reference}`, SK: 'METADATA' },
+    UpdateExpression:          'SET updatedAt = :u',
+    ExpressionAttributeValues: { ':u': now },
+    ConditionExpression:       'attribute_exists(PK)',
+  })).catch(() => {
+    // No es crítico si falla — la nota ya quedó.
+    console.warn('[addQuoteNote] no se pudo actualizar updatedAt de metadata');
+  });
+
+  return item;
 }

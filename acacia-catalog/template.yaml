@@ -172,7 +172,7 @@ Resources:
       Name: AcaciaCatalogApi
       StageName: !Ref Environment
       Cors:
-        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowMethods: "'GET,POST,PATCH,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
         AllowOrigin: "'*'"
 
@@ -354,6 +354,142 @@ Resources:
             RestApiId: !Ref CatalogApi
             Path: /admin/me
             Method: GET
+
+  # ─── Lambda: GET /admin/quotes (Sprint A2) ───────────────────────────────────
+  AdminListQuotesFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListQuotes.ts
+    Properties:
+      FunctionName: acacia-admin-list-quotes
+      CodeUri: backend/
+      Handler: src/handlers/adminListQuotes.handler
+      Description: "Admin · listado de cotizaciones con filtro opcional por status"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref QuotesTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListQuotes:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/quotes
+            Method: GET
+
+  # ─── Lambda: GET /admin/quotes/{reference} (Sprint A2) ───────────────────────
+  AdminGetQuoteFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminGetQuote.ts
+    Properties:
+      FunctionName: acacia-admin-get-quote
+      CodeUri: backend/
+      Handler: src/handlers/adminGetQuote.handler
+      Description: "Admin · detalle completo de cotización + notas internas"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref QuotesTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        GetQuote:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/quotes/{reference}
+            Method: GET
+
+  # ─── Lambda: PATCH /admin/quotes/{reference}/status (Sprint A2) ──────────────
+  AdminUpdateQuoteStatusFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpdateQuoteStatus.ts
+    Properties:
+      FunctionName: acacia-admin-update-quote-status
+      CodeUri: backend/
+      Handler: src/handlers/adminUpdateQuoteStatus.handler
+      Description: "Admin · cambia el status de una cotización"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuotesTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpdateStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/quotes/{reference}/status
+            Method: PATCH
+
+  # ─── Lambda: POST /admin/quotes/{reference}/notes (Sprint A2) ────────────────
+  AdminAddQuoteNoteFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminAddQuoteNote.ts
+    Properties:
+      FunctionName: acacia-admin-add-quote-note
+      CodeUri: backend/
+      Handler: src/handlers/adminAddQuoteNote.handler
+      Description: "Admin · agrega una nota interna a una cotización"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuotesTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        AddNote:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/quotes/{reference}/notes
+            Method: POST
 
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:

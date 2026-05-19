@@ -5,6 +5,8 @@ import { RequireAuth } from '@/components/RequireAuth';
 import { Login } from '@/pages/Login';
 import { Layout } from '@/pages/Layout';
 import { Home } from '@/pages/Home';
+import { Cotizaciones } from '@/pages/Cotizaciones';
+import { CotizacionDetail } from '@/pages/CotizacionDetail';
 
 // Cliente para futuras queries (cotizaciones, productos, slides...).
 const queryClient = new QueryClient({
@@ -28,11 +30,12 @@ export default function App() {
           {/* Privadas: todo lo demás vive bajo Layout */}
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
-              <Route index element={<Home />} />
-              {/* Sprints A2-A8:
-                  <Route path="cotizaciones" element={<Cotizaciones />} />
-                  <Route path="productos"    element={<Productos    />} />
-                  <Route path="slides"       element={<Slides       />} />
+              <Route index                          element={<Home              />} />
+              <Route path="cotizaciones"            element={<Cotizaciones      />} />
+              <Route path="cotizaciones/:reference" element={<CotizacionDetail  />} />
+              {/* Sprints A3+:
+                  <Route path="productos" element={<Productos />} />
+                  <Route path="slides"    element={<Slides    />} />
               */}
             </Route>
           </Route>

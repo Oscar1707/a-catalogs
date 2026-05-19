@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from 'react';
 import { adminHeartbeat, adminLogin } from '@/api/admin';
+import { AUTH_INVALID_EVENT } from '@/lib/apiClient';
 
 const STORAGE_KEY = 'acacia.admin.token';
 const STORAGE_EXP = 'acacia.admin.exp';
@@ -71,6 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_EXP);
     setState({ token: null, expiresAt: null, ready: true });
   }, []);
+
+  // Escucha eventos de 401 lanzados por apiClient — fuerza logout
+  // cuando el token expira o se invalida desde el servidor.
+  useEffect(() => {
+    const onAuthInvalid = () => logout();
+    window.addEventListener(AUTH_INVALID_EVENT, onAuthInvalid);
+    return () => window.removeEventListener(AUTH_INVALID_EVENT, onAuthInvalid);
+  }, [logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ ...state, login, logout }),

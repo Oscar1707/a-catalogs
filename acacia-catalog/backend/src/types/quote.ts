@@ -98,6 +98,67 @@ export interface CounterItem {
   value: number;
 }
 
+// ── Notas internas (admin) ────────────────────────────────────────────────────
+// Items separados en la misma tabla:
+//   PK: QUOTE#<ref>   SK: NOTE#<isoTimestamp>
+// El SK con timestamp ISO permite ordenar cronológicamente sin GSI.
+
+export interface NoteItem {
+  PK:        string; // "QUOTE#ACW-2026-0042"
+  SK:        string; // "NOTE#2026-05-18T12:34:56.789Z"
+  id:        string; // mismo timestamp del SK (para frontend)
+  text:      string;
+  author:    'admin';
+  createdAt: string; // ISO 8601 — igual al timestamp del SK
+}
+
+export type NotePublic = Omit<NoteItem, 'PK' | 'SK'>;
+
+// ── Shapes de la API admin ────────────────────────────────────────────────────
+
+// GET /admin/quotes — resumen para listas (sin descripción completa)
+export interface QuoteAdminSummary {
+  reference:   string;
+  name:        string;
+  phone:       string;
+  email:       string;
+  projectType: ProjectType;
+  status:      QuoteStatus;
+  createdAt:   string;
+  updatedAt:   string;
+}
+
+// GET /admin/quotes/{ref} — detalle completo + notas
+export interface QuoteAdminDetail {
+  reference:   string;
+  name:        string;
+  phone:       string;
+  email:       string;
+  address:     string;
+  projectType: ProjectType;
+  description: string;
+  dimensions:  string;
+  finish:      string;
+  material:    string;
+  visualRef:   string;
+  budget:      string;
+  timeline:    string;
+  status:      QuoteStatus;
+  createdAt:   string;
+  updatedAt:   string;
+  notes:       NotePublic[];
+}
+
+// PATCH /admin/quotes/{ref}/status — body
+export interface UpdateStatusInput {
+  status: QuoteStatus;
+}
+
+// POST /admin/quotes/{ref}/notes — body
+export interface AddNoteInput {
+  text: string;
+}
+
 // ── Envelope de API (compartido con products) ─────────────────────────────────
 
 export interface ApiSuccess<T = unknown> {

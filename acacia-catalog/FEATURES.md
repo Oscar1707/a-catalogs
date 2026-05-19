@@ -16,6 +16,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
 - [Feature 02 · Panel de administración](#feature-02--panel-de-administración)
   - [Sprint A1 — Auth con JWT](#sprint-a1--auth-con-jwt)
   - [Sprint A1.5 — Migración a SPA independiente](#sprint-a15--migración-a-spa-independiente)
+  - [Sprint A2 — Inbox de cotizaciones](#sprint-a2--inbox-de-cotizaciones)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -434,7 +435,7 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 |---|---|
 | Rama | `feature/site-expansion` |
 | Inicio | 2026-05-18 |
-| Estado | 🟢 Sprint A1 + A1.5 en producción · A2-A8 pendientes |
+| Estado | 🟢 Sprints A1 + A1.5 + A2 en producción · A3-A8 pendientes |
 | URL admin | https://d2ccwjnserochq.cloudfront.net |
 | URL público | https://d2pgrgppb9pktx.cloudfront.net (intacto) |
 
@@ -654,6 +655,119 @@ API
 - S3 bucket admin: ~$0 (< 400 KB de assets)
 - CloudFront admin: incluido en free tier 50 GB/mes
 - **Total adicional: $0**
+
+---
+
+### Sprint A2 — Inbox de cotizaciones
+
+**Estado:** ✅ Desplegado en producción · 4 endpoints admin activos · inbox + detalle UI completos
+
+#### Recursos AWS nuevos
+
+| Recurso | Identificador |
+|---|---|
+| Lambda GET | `acacia-admin-list-quotes` |
+| Lambda GET | `acacia-admin-get-quote` |
+| Lambda PATCH | `acacia-admin-update-quote-status` |
+| Lambda POST | `acacia-admin-add-quote-note` |
+| Endpoint GET | `/admin/quotes?status=<opcional>` |
+| Endpoint GET | `/admin/quotes/{reference}` |
+| Endpoint PATCH | `/admin/quotes/{reference}/status` |
+| Endpoint POST | `/admin/quotes/{reference}/notes` |
+
+#### Modelo de datos extendido
+
+Las notas internas viven como items separados en la misma tabla `acacia-quotes`:
+
+```
+PK: QUOTE#ACW-2026-0001  SK: METADATA                    ← cotización
+PK: QUOTE#ACW-2026-0001  SK: NOTE#2026-05-18T...#a1b2    ← nota interna
+```
+
+- **SK con timestamp ISO + sufijo random** ordena cronológicamente sin GSI · evita colisiones imposibles
+- Cada nota es atómica → no riesgo de pisar la cotización al editar
+- `Query` por `PK + begins_with(SK, "NOTE#")` devuelve todas las notas de una cotización
+
+#### Backend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `backend/src/types/quote.ts` | +`NoteItem`, `NotePublic`, `QuoteAdminSummary`, `QuoteAdminDetail`, `UpdateStatusInput`, `AddNoteInput` |
+| `backend/src/lib/dynamo.ts` | +`scanAllQuotes(status?)`, +`updateQuoteStatus(ref, status)`, +`getQuoteNotes(ref)`, +`addQuoteNote(ref, text)` |
+| `backend/src/handlers/adminListQuotes.ts` 🆕 | Listado con filtro por status · valida status en `QUOTE_STATUSES` |
+| `backend/src/handlers/adminGetQuote.ts` 🆕 | Detalle + notas en paralelo (`Promise.all`) |
+| `backend/src/handlers/adminUpdateQuoteStatus.ts` 🆕 | `UpdateItem` con `ConditionExpression: attribute_exists(PK)` → 404 si no existe |
+| `backend/src/handlers/adminAddQuoteNote.ts` 🆕 | Validación cotización existe + agrega nota + actualiza `updatedAt` |
+
+#### Frontend admin — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `admin/src/types/quote.ts` 🆕 | Mirror del backend |
+| `admin/src/lib/apiClient.ts` 🆕 | `apiRequest()` con `Authorization: Bearer` automático + `AUTH_INVALID_EVENT` ante 401 |
+| `admin/src/lib/auth.tsx` | + listener de `AUTH_INVALID_EVENT` → logout automático cuando token expira |
+| `admin/src/api/quotes.ts` 🆕 | `listQuotes(status?)`, `getQuote(ref)`, `updateQuoteStatus(ref, s)`, `addQuoteNote(ref, t)` |
+| `admin/src/components/StatusBadge.tsx` 🆕 | Badge visual con colores sutiles por estado |
+| `admin/src/pages/Cotizaciones.tsx` 🆕 | Inbox: filtros chip-style por status · búsqueda local · tabla desktop / cards mobile · contadores por bucket |
+| `admin/src/pages/CotizacionDetail.tsx` 🆕 | Detalle 2-col · selector status (mutation) · botones contacto (WhatsApp / email) · timeline de notas |
+| `admin/src/pages/Home.tsx` | Tarjetas: Cotizaciones marcada "Disponible" · resto "Próximamente" desactivadas |
+| `admin/src/App.tsx` | + rutas `/cotizaciones` y `/cotizaciones/:reference` |
+
+#### UX implementada
+
+**Inbox (lista):**
+- 7 chips de filtro (Todas + 6 estados) con contador por bucket
+- Buscador local: por referencia, nombre o teléfono (normaliza dígitos)
+- Botón "Actualizar" con icono spinner durante refetch
+- Tabla en desktop, cards en mobile (responsive)
+- Click en cualquier fila → navega al detalle
+- Empty state si hay 0 cotizaciones (mensaje distinto si hay filtro activo)
+
+**Detalle:**
+- Grid 2 columnas (info + acciones) en desktop, stack en mobile
+- Selector de status: 6 botones, el activo destacado, click dispara mutation
+- Botón WhatsApp con mensaje pre-llenado: "Hola {primerNombre}, te escribo de Acacia Woods sobre tu cotización {ref}."
+- Botón Email (si el cliente proveyó correo) con subject pre-llenado
+- Sección de notas: form arriba (textarea + contador 4000 chars) + timeline cronológica (más recientes arriba)
+- 404 manejado: referencia inválida o no encontrada → vista propia con tono Acacia
+- Optimistic UI: el form de nota se limpia al enviar; si falla muestra error sin perder el texto en estado
+
+#### Seguridad
+
+- ✅ Todos los endpoints admin protegidos con `requireAdmin()` middleware
+- ✅ IAM mínima por Lambda (read-only para list/get, CrudPolicy para update/note)
+- ✅ Validación de status contra enum servidor-side
+- ✅ Validación regex de referencia `^ACW-\d{4}-\d{4}$`
+- ✅ ConditionExpression `attribute_exists(PK)` evita updates a cotizaciones inexistentes
+- ✅ Frontend: `apiRequest()` hace logout automático ante 401 (token expirado)
+- ✅ Notes max 4000 caracteres validado en servidor y cliente
+
+#### Detalles técnicos relevantes
+
+- **Cache TanStack Query**: `staleTime: 30s` para admin (cambia más seguido que catálogo público)
+- **Invalidación**: al cambiar status o agregar nota se invalida `['admin','quote',ref]` y `['admin','quotes']`
+- **CORS API**: + `PATCH` agregado a `AllowMethods`
+- **Sufijo random en SK de notas**: evita colisiones extremadamente improbables si dos notas se crean en el mismo ms
+
+#### Smoke tests producción
+
+```
+✅ GET  /admin/quotes              sin token → 401
+✅ GET  /admin/quotes/{ref}        sin token → 401
+✅ Admin SPA /                     200
+✅ Admin SPA /cotizaciones         200
+✅ Admin SPA /cotizaciones/{ref}   200
+✅ Público (sin regresión): /, /catalogo, /cotizaciones todos 200
+✅ 2 cotizaciones reales en producción visibles desde inbox (ACW-2026-0001, ACW-2026-0002)
+```
+
+#### Bundles
+
+| | Antes A2 | Después A2 |
+|---|---|---|
+| Admin JS | 319 KB | 353 KB (+34 KB nuevo código) |
+| Admin gzip | 103 KB | 111 KB |
+| Admin CSS | 13 KB | 20 KB |
 
 ---
 
