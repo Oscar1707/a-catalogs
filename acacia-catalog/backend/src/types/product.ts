@@ -88,7 +88,6 @@ export interface ProductCreateInput {
 // ── Shape de actualización admin (todos los campos opcionales) ───────────────
 // Whitelist de lo que se puede editar desde el panel admin.
 // id/slug/ref/skuRef/createdAt/updatedAt no se editan (identifiers + auto).
-// images/coverImage se gestionan vía endpoints de upload (Sprint A4).
 // tallas/prices/specs se editan en un sub-sprint futuro (estructura compleja).
 export interface ProductUpdateInput {
   name?:              string;
@@ -105,6 +104,9 @@ export interface ProductUpdateInput {
   order?:             number;
   active?:            boolean;
   featured?:          boolean;
+  // Imágenes — gestionadas desde el componente ImageUploader (Sprint A4)
+  images?:            string[];
+  coverImage?:        string;
 }
 
 // Shape público — sin claves internas de DynamoDB

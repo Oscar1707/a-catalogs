@@ -27,7 +27,11 @@ const ALLOWED_FIELDS = new Set<keyof ProductUpdateInput>([
   'whatsappMessage',
   'order',
   'active', 'featured',
+  'images', 'coverImage',
 ]);
+
+const MAX_IMAGES = 20;
+const IMAGE_URL_REGEX = /^https:\/\/acacia-catalog-images\.s3(?:\.[a-z0-9-]+)?\.amazonaws\.com\/[a-z0-9][a-z0-9-]*\/[a-z0-9]+\.webp$/i;
 
 // Validaciones simples por tipo
 function sanitize(body: Record<string, unknown>): {
@@ -54,6 +58,38 @@ function sanitize(body: Record<string, unknown>): {
           return { ok: false, message: 'Campo order debe ser número >= 0.' };
         }
         out.order = Math.floor(value);
+        break;
+
+      case 'images': {
+        if (!Array.isArray(value)) {
+          return { ok: false, message: 'Campo images debe ser un array.' };
+        }
+        if (value.length > MAX_IMAGES) {
+          return { ok: false, message: `Máximo ${MAX_IMAGES} imágenes por producto.` };
+        }
+        const urls: string[] = [];
+        for (const u of value) {
+          if (typeof u !== 'string' || !IMAGE_URL_REGEX.test(u)) {
+            return { ok: false, message: 'URL de imagen inválida (debe ser del bucket acacia-catalog-images y .webp).' };
+          }
+          urls.push(u);
+        }
+        out.images = urls;
+        // Auto-sync coverImage si no se envió explícitamente
+        if (!('coverImage' in body)) {
+          out.coverImage = urls[0] ?? '';
+        }
+        break;
+      }
+
+      case 'coverImage':
+        if (typeof value !== 'string') {
+          return { ok: false, message: 'Campo coverImage debe ser string.' };
+        }
+        if (value && !IMAGE_URL_REGEX.test(value)) {
+          return { ok: false, message: 'URL de coverImage inválida.' };
+        }
+        out.coverImage = value;
         break;
 
       default:

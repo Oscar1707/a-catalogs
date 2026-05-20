@@ -18,6 +18,7 @@ desplegado en AWS y qué está pendiente. **Editar al cerrar cada sprint.**
   - [Sprint A1.5 — Migración a SPA independiente](#sprint-a15--migración-a-spa-independiente)
   - [Sprint A2 — Inbox de cotizaciones](#sprint-a2--inbox-de-cotizaciones)
   - [Sprint A3 — CRUD productos](#sprint-a3--crud-productos)
+  - [Sprint A4 — Galería de imágenes](#sprint-a4--galería-de-imágenes)
 - [Pendiente](#-pendiente)
 - [Convenciones](#-convenciones)
 
@@ -436,7 +437,7 @@ Resuelve la PK desde el slug, convierte a WebP, sube a S3 (cada slug en su carpe
 |---|---|
 | Rama | `feature/site-expansion` |
 | Inicio | 2026-05-18 |
-| Estado | 🟢 Sprints A1 + A1.5 + A2 + A3 en producción · A4-A8 pendientes |
+| Estado | 🟢 Sprints A1 + A1.5 + A2 + A3 + A3.5 + A4 en producción · A5-A8 pendientes |
 | URL admin | https://d2ccwjnserochq.cloudfront.net |
 | URL público | https://d2pgrgppb9pktx.cloudfront.net (intacto) |
 
@@ -891,6 +892,118 @@ Whitelist explícita (defensa en profundidad — backend ignora cualquier otro c
 | Admin JS | 353 KB | 374 KB (+21 KB) |
 | Admin CSS | 20 KB | 22 KB |
 | Público JS | 370 KB | 379 KB (+9 KB) — solo el filtro featured |
+
+---
+
+### Sprint A4 — Galería de imágenes
+
+**Estado:** ✅ Desplegado en producción · upload desde el navegador con conversión WebP automática
+
+#### Arquitectura del upload
+
+```
+Browser                     Backend Lambda            S3
+  │                              │                     │
+  ├─ convert to WebP (Canvas) ──>│                     │
+  │     (resize a 1600px,        │                     │
+  │      quality 0.82)           │                     │
+  │                              │                     │
+  ├─ POST /admin/uploads/        │                     │
+  │     product-image            │                     │
+  │     { productId, contentType,│                     │
+  │       contentLength }        │                     │
+  │                              ├─ valida product     │
+  │                              ├─ presign PUT URL    │
+  │                              ├─ key: slug/xxxx.webp│
+  │<─ { uploadUrl, publicUrl } ──┤                     │
+  │                              │                     │
+  ├─ PUT uploadUrl ─────────────────────────────────> │
+  │     (Content-Type, body=blob)                      │
+  │<─ 200 OK ────────────────────────────────────── ──│
+  │                              │                     │
+  ├─ PATCH /admin/products/{id}  │                     │
+  │     { images: [...nuevos] }  │                     │
+  │                              ├─ valida URLs       │
+  │                              ├─ UpdateItem        │
+  │                              │  coverImage=img[0] │
+  │<─ 200 OK ─────────────────── ┤                     │
+```
+
+#### Recursos AWS nuevos
+
+| Recurso | Identificador |
+|---|---|
+| Lambda POST | `acacia-admin-presign-product-image` |
+| Endpoint | `POST /admin/uploads/product-image` |
+| S3 CORS rule | `PUT` desde `https://d2ccwjnserochq.cloudfront.net` |
+
+#### Backend — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `backend/package.json` | +`@aws-sdk/client-s3`, +`@aws-sdk/s3-request-presigner` |
+| `backend/src/lib/s3.ts` 🆕 | `presignProductImageUpload()` con TTL 5min · key `<slug>/<8hex>.webp` · valida WebP + max 5MB |
+| `backend/src/types/product.ts` | +`images?: string[]`, +`coverImage?: string` en `ProductUpdateInput` |
+| `backend/src/handlers/adminUpdateProduct.ts` | Acepta `images` (max 20) y `coverImage` · valida URL contra regex del bucket · auto-sync de `coverImage = images[0]` si no se envía explícitamente |
+| `backend/src/handlers/adminPresignProductImage.ts` 🆕 | Endpoint de presign · valida producto existe · regresa `{ uploadUrl, key, publicUrl, expiresIn }` |
+
+#### Frontend admin — archivos
+
+| Archivo | Cambio |
+|---|---|
+| `admin/src/types/product.ts` | +`images?` y +`coverImage?` en `ProductUpdateInput` |
+| `admin/src/lib/imageUpload.ts` 🆕 | Pipeline: convertir a WebP via Canvas + resize a 1600px + presign + PUT a S3 · callbacks de progreso por fase |
+| `admin/src/components/ImageUploader.tsx` 🆕 | Grid con preview, badge "Portada" en la 1ª, botones ↑↓ para reordenar, ✕ para eliminar, picker de archivos múltiple |
+| `admin/src/pages/ProductoDetail.tsx` | Integra `<ImageUploader>` entre WhatsApp y bloque read-only · actualiza cache local al cambiar imágenes |
+
+#### Pipeline de conversión en el cliente
+
+1. **Carga**: `createImageBitmap(file)` (fallback `<img>` para Safari < 14)
+2. **Resize**: si el lado largo > 1600px, escala manteniendo aspect ratio
+3. **Encode**: `canvas.toBlob(blob, 'image/webp', 0.82)`
+4. **Validación**: rechaza si el resultado > 5 MB
+
+Si el archivo ya es WebP y no requiere resize, lo retorna sin re-encodear.
+
+#### Seguridad implementada
+
+- ✅ **Auth obligatorio** en el endpoint de presign
+- ✅ **ContentType lock**: solo `image/webp` se acepta (presigned URL firma esta restricción)
+- ✅ **Tamaño máximo 5 MB** validado tanto en cliente como en presign
+- ✅ **Verificación de producto existente** antes de generar URL
+- ✅ **Key sanitizado**: solo `[a-z0-9-]` en el slug, sufijo random hex de 8 chars
+- ✅ **URL whitelist** en PATCH: regex valida `https://acacia-catalog-images.s3.amazonaws.com/<slug>/<id>.webp`
+- ✅ **Max 20 imágenes** por producto
+- ✅ **IAM mínima**: la Lambda de presign solo tiene `s3:PutObject` sobre el bucket de imágenes (no Delete, no List)
+- ✅ **TTL del presigned URL**: 5 minutos (suficiente para subir 5 MB)
+- ✅ **CORS S3 restringido a admin**: PUT solo desde `https://d2ccwjnserochq.cloudfront.net`, no `*`
+
+#### UX implementada
+
+- **Drag-and-drop** vía input `multiple` (selecciona varias imágenes a la vez)
+- **Feedback por fase**: "Convirtiendo a WebP… / Solicitando URL… / Subiendo…"
+- **Save inmediato**: cada upload/delete/reorder hace PATCH al instante (sin batch)
+- **Badge "Portada"** en la primera imagen
+- **Botones ↑↓** para reordenar (drag-and-drop a futuro)
+- **Confirm dialog** antes de eliminar
+- **Empty state**: tile grande "click para agregar" cuando no hay imágenes
+- **Error inline** si falla cualquier paso
+
+#### Smoke tests producción
+
+```
+✅ POST /admin/uploads/product-image    sin token → 401
+✅ S3 CORS: GET/HEAD desde * + PUT desde admin
+✅ S3 bucket: imágenes existentes (vorden/01.webp) responden 200
+✅ Admin SPA /productos/aca-tv-001 → 200 con uploader integrado
+```
+
+#### Costo adicional
+
+- Presign endpoint: invocaciones Lambda free tier (1M/mes)
+- S3 PUT: $0.005 per 1,000 requests
+- Storage: $0.023/GB/mes
+- **Total estimado**: ~$0 al ritmo de subir 10-50 imágenes nuevas al mes
 
 ---
 

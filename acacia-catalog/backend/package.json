@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.1050.0",
     "@aws-sdk/client-ses": "^3.1049.0",
     "@aws-sdk/client-ssm": "^3.1048.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.1050.0",
     "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {

@@ -111,10 +111,20 @@ Resources:
         RestrictPublicBuckets:  false
       CorsConfiguration:
         CorsRules:
+          # Lectura pública (catálogo / admin)
           - AllowedOrigins: ['*']
             AllowedMethods: [GET, HEAD]
             AllowedHeaders: ['*']
             MaxAge: 86400
+          # Upload via presigned URL (solo desde el admin SPA)
+          - AllowedOrigins:
+              - https://d2ccwjnserochq.cloudfront.net
+            AllowedMethods: [PUT]
+            AllowedHeaders:
+              - Content-Type
+              - Content-Length
+              - x-amz-content-sha256
+            MaxAge: 3600
 
   ImagesBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -524,6 +534,45 @@ Resources:
             RestApiId: !Ref CatalogApi
             Path: /admin/products
             Method: GET
+
+  # ─── Lambda: POST /admin/uploads/product-image (Sprint A4) ───────────────────
+  AdminPresignProductImageFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminPresignProductImage.ts
+    Properties:
+      FunctionName: acacia-admin-presign-product-image
+      CodeUri: backend/
+      Handler: src/handlers/adminPresignProductImage.handler
+      Description: "Admin · genera presigned PUT URL para subir imagen de producto"
+      Policies:
+        # Solo necesita lectura del producto (para validar que existe + obtener slug)
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        # PutObject en el bucket de imágenes
+        - Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${ImagesBucket.Arn}/*"
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        PresignUpload:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/uploads/product-image
+            Method: POST
 
   # ─── Lambda: POST /admin/products (Sprint A3.5) ──────────────────────────────
   AdminCreateProductFunction:

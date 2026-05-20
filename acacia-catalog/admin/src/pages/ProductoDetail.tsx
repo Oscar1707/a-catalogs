@@ -1,6 +1,7 @@
 // admin/src/pages/ProductoDetail.tsx
 // Form de edición de un producto. Whitelist de campos editables.
-// Tallas / precios / specs / imágenes están read-only en este sprint.
+// Tallas / precios / specs read-only en este sprint.
+// Imágenes editables vía ImageUploader (Sprint A4).
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -8,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ExternalLink, Save, Star } from 'lucide-react';
 import { getProduct, updateProduct } from '@/api/products';
+import { ImageUploader } from '@/components/ImageUploader';
 import type { ProductPublic, ProductUpdateInput } from '@/types/product';
 
 export function ProductoDetail() {
@@ -221,7 +223,20 @@ export function ProductoDetail() {
           />
         </Block>
 
-        {/* Read-only: tallas, precios, specs, imágenes */}
+        {/* Imágenes (Sprint A4) — save inmediato por cada operación */}
+        <ImageUploader
+          productId={data.id}
+          images={data.images ?? []}
+          onChange={(next) => {
+            // El componente ya hizo PATCH; sincronizamos el cache local
+            qc.setQueryData<ProductPublic>(['admin', 'product', id], (prev) =>
+              prev ? { ...prev, images: next, coverImage: next[0] ?? '' } : prev,
+            );
+            qc.invalidateQueries({ queryKey: ['admin', 'products'] });
+          }}
+        />
+
+        {/* Read-only: tallas, precios, specs (sin imágenes ya) */}
         <ReadOnlyBlock product={data} />
 
         {/* Acción guardar */}
@@ -372,7 +387,6 @@ function ReadOnlyBlock({ product }: { product: ProductPublic }) {
   const tallasCount = Object.keys(product.tallas ?? {}).length;
   const pricesCount = product.prices?.length ?? 0;
   const specsCount  = Object.keys(product.specs ?? {}).length;
-  const imagesCount = product.images?.length ?? 0;
 
   return (
     <section className="border border-line/40 bg-ink-soft p-6">
@@ -382,17 +396,16 @@ function ReadOnlyBlock({ product }: { product: ProductPublic }) {
       <p className="mb-5 text-[11px] font-light italic leading-relaxed text-mute-dark">
         Estos campos vienen del seed. Por ahora se actualizan desde DynamoDB.
       </p>
-      <dl className="grid grid-cols-2 gap-y-3 gap-x-6 md:grid-cols-4">
-        <ReadStat label="Tallas"   value={tallasCount} />
-        <ReadStat label="Precios"  value={pricesCount} />
-        <ReadStat label="Specs"    value={specsCount}  />
-        <ReadStat label="Imágenes" value={imagesCount} hint="Sprint A4" />
+      <dl className="grid grid-cols-2 gap-y-3 gap-x-6 md:grid-cols-3">
+        <ReadStat label="Tallas"  value={tallasCount} />
+        <ReadStat label="Precios" value={pricesCount} />
+        <ReadStat label="Specs"   value={specsCount}  />
       </dl>
     </section>
   );
 }
 
-function ReadStat({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function ReadStat({ label, value }: { label: string; value: number }) {
   return (
     <div>
       <dt className="text-[10px] font-light uppercase text-mute-dark tracking-[0.2em]">
@@ -400,7 +413,6 @@ function ReadStat({ label, value, hint }: { label: string; value: number; hint?:
       </dt>
       <dd className="mt-1 text-sm font-light text-bone">
         {value} <span className="text-mute-dark">{value === 1 ? 'registro' : 'registros'}</span>
-        {hint && <span className="ml-2 text-[10px] uppercase text-amber tracking-[0.2em]">{hint}</span>}
       </dd>
     </div>
   );

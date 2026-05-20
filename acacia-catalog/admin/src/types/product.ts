@@ -81,4 +81,6 @@ export interface ProductUpdateInput {
   order?:             number;
   active?:            boolean;
   featured?:          boolean;
+  images?:            string[];
+  coverImage?:        string;
 }
