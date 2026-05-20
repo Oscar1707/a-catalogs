@@ -66,6 +66,25 @@ export interface ProductItem {
   updatedAt: string;   // ISO 8601
 }
 
+// ── Shape de creación admin (mínimo viable) ──────────────────────────────────
+// Lo demás (precios, tallas, specs, imágenes) se llena editando después.
+export interface ProductCreateInput {
+  // Identificación — requeridos
+  id:     string;  // "ACA-MES-005" — usado como PK
+  ref:    string;  // generalmente igual al id
+  slug:   string;  // "mesa-folse" — usado en /catalogo/:slug
+  name:   string;
+  family: string;
+
+  // Opcionales
+  linea?:           string;
+  categoria?:       string;
+  tagline?:         string;
+  description?:     string;
+  whatsappNumber?:  string;  // default 525639292363
+  whatsappMessage?: string;
+}
+
 // ── Shape de actualización admin (todos los campos opcionales) ───────────────
 // Whitelist de lo que se puede editar desde el panel admin.
 // id/slug/ref/skuRef/createdAt/updatedAt no se editan (identifiers + auto).

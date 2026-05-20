@@ -11,7 +11,7 @@ import {
   QueryCommand,
   UpdateCommand,
 }                                                            from '@aws-sdk/lib-dynamodb';
-import { ProductItem, ProductUpdateInput }                   from '../types/product';
+import { ProductItem, ProductUpdateInput, ProductCreateInput } from '../types/product';
 import { QuoteItem, NoteItem, QuoteStatus }                  from '../types/quote';
 import { SlideItem }                                         from '../types/slide';
 
@@ -111,6 +111,71 @@ export async function scanAllProducts(): Promise<ProductItem[]> {
   } while (lastKey);
 
   return items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+}
+
+// ── createProduct (admin) ────────────────────────────────────────────────────
+// Crea un producto nuevo. Conditional put previene sobrescribir uno existente.
+// Auto-asigna `order` al final del catálogo (max + 10) si no se especifica.
+export async function createProduct(input: ProductCreateInput): Promise<ProductItem> {
+  const id = input.id.trim();
+  if (!id) throw new Error('ID requerido');
+
+  // Calcular order: max(order) + 10. Si no hay productos, empieza en 10.
+  const existing = await scanAllProducts();
+  const maxOrder = existing.reduce((m, p) => Math.max(m, p.order ?? 0), 0);
+  const order = maxOrder + 10;
+
+  const now = new Date().toISOString();
+
+  const item: ProductItem = {
+    PK:                `PRODUCT#${id.toLowerCase()}`,
+    SK:                'METADATA',
+
+    // Identificación
+    id,
+    name:              input.name.trim(),
+    ref:               input.ref.trim() || id,
+    family:            input.family.trim(),
+    linea:             (input.linea     ?? '').trim(),
+    slug:              input.slug.trim().toLowerCase(),
+    skuRef:            input.ref.trim() || id,
+
+    // Contenido
+    description:       (input.description ?? '').trim(),
+    tagline:           (input.tagline     ?? '').trim(),
+    categoria:         (input.categoria   ?? '').trim(),
+
+    // Vacíos — se editan después
+    specs:             {},
+    materialPrincipal: '',
+    acabado:           '',
+    iluminacion:       '',
+    instalacion:       '',
+    tallaBase:         '',
+    tallas:            {},
+    prices:            [],
+    images:            [],
+    coverImage:        '',
+
+    // WhatsApp
+    whatsappNumber:    (input.whatsappNumber  ?? '525639292363').replace(/\D+/g, ''),
+    whatsappMessage:   (input.whatsappMessage ?? `Hola, me interesa el modelo ${input.name}.`).trim(),
+
+    // Control
+    active:            true,
+    featured:          false,
+    order,
+    createdAt:         now,
+    updatedAt:         now,
+  };
+
+  await dynamo.send(new PutCommand({
+    TableName:           TABLE,
+    Item:                item,
+    ConditionExpression: 'attribute_not_exists(PK)',
+  }));
+
+  return item;
 }
 
 // ── updateProduct (admin) ────────────────────────────────────────────────────

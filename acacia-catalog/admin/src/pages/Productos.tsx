@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, RefreshCw, Search, Star } from 'lucide-react';
+import { ArrowUpRight, Plus, RefreshCw, Search, Star } from 'lucide-react';
 import { listProducts, updateProduct } from '@/api/products';
 import type { ProductPublic, ProductUpdateInput } from '@/types/product';
 
@@ -103,15 +103,24 @@ export function Productos() {
             >
               Productos
             </h1>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="inline-flex items-center gap-2 border border-line px-4 py-2 text-[10px] font-light uppercase text-mute tracking-[0.25em] transition-colors hover:text-bone hover:bg-ink-soft disabled:opacity-40"
-            >
-              <RefreshCw size={12} strokeWidth={1.2} className={isFetching ? 'animate-spin' : ''} />
-              Actualizar
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="inline-flex items-center gap-2 border border-line px-4 py-2 text-[10px] font-light uppercase text-mute tracking-[0.25em] transition-colors hover:text-bone hover:bg-ink-soft disabled:opacity-40"
+              >
+                <RefreshCw size={12} strokeWidth={1.2} className={isFetching ? 'animate-spin' : ''} />
+                Actualizar
+              </button>
+              <Link
+                to="/productos/nuevo"
+                className="inline-flex items-center gap-2 border border-amber/60 px-4 py-2 text-[10px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:bg-ink-soft"
+              >
+                <Plus size={12} strokeWidth={1.2} />
+                Nuevo
+              </Link>
+            </div>
           </div>
         </motion.div>
       </section>

@@ -50,6 +50,21 @@ export interface ProductPublic {
   updatedAt: string;
 }
 
+// Shape de creación (mínimo viable — el resto se edita después).
+export interface ProductCreateInput {
+  id:               string;
+  ref:              string;
+  slug:             string;
+  name:             string;
+  family:           string;
+  linea?:           string;
+  categoria?:       string;
+  tagline?:         string;
+  description?:     string;
+  whatsappNumber?:  string;
+  whatsappMessage?: string;
+}
+
 // Whitelist editable desde el panel (debe coincidir con backend ProductUpdateInput).
 export interface ProductUpdateInput {
   name?:              string;

@@ -525,6 +525,40 @@ Resources:
             Path: /admin/products
             Method: GET
 
+  # ─── Lambda: POST /admin/products (Sprint A3.5) ──────────────────────────────
+  AdminCreateProductFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminCreateProduct.ts
+    Properties:
+      FunctionName: acacia-admin-create-product
+      CodeUri: backend/
+      Handler: src/handlers/adminCreateProduct.handler
+      Description: "Admin · crea un producto nuevo con campos mínimos"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        CreateProduct:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/products
+            Method: POST
+
   # ─── Lambda: GET /admin/products/{id} (Sprint A3) ────────────────────────────
   AdminGetProductFunction:
     Type: AWS::Serverless::Function

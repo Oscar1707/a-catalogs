@@ -1,7 +1,7 @@
 // admin/src/api/products.ts
 
 import { apiRequest } from '@/lib/apiClient';
-import type { ProductPublic, ProductUpdateInput } from '@/types/product';
+import type { ProductCreateInput, ProductPublic, ProductUpdateInput } from '@/types/product';
 
 export async function listProducts(): Promise<ProductPublic[]> {
   return apiRequest<ProductPublic[]>('/admin/products');
@@ -19,4 +19,11 @@ export async function updateProduct(
     `/admin/products/${encodeURIComponent(id)}`,
     { method: 'PATCH', body: patch },
   );
+}
+
+export async function createProduct(input: ProductCreateInput): Promise<ProductPublic> {
+  return apiRequest<ProductPublic>('/admin/products', {
+    method: 'POST',
+    body:   input,
+  });
 }
