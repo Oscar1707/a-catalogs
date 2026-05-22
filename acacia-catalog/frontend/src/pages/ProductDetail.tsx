@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeft, MessageCircle } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Settings2 } from 'lucide-react';
 import { fetchProducts } from '@/api/products';
+import { getConfigurator } from '@/data/configurators';
+import { ProductConfigurator } from '@/components/ProductConfigurator';
 import type { PriceEntry, ProductPublic } from '@/types/product';
 
 export function ProductDetail() {
@@ -95,6 +97,37 @@ export function ProductDetail() {
  * stack en mobile. Galería a la izquierda, info a la derecha.
  * ──────────────────────────────────────────────────────── */
 function ProductView({ product }: { product: ProductPublic }) {
+  const [configuratorOpen, setConfiguratorOpen] = useState(false);
+  const configurator = getConfigurator(product.slug);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Garantiza que el auto-open ocurra solo una vez por carga (no en cada render
+  // ni si el usuario cierra el modal y vuelve a aparecer el param por algún motivo).
+  const autoOpenTriggered = useRef(false);
+
+  // Si el link viene con ?configurar=1, abrir el modal 500ms después de
+  // que el producto cargue (le da tiempo al cliente a ver la pieza primero).
+  useEffect(() => {
+    if (autoOpenTriggered.current) return;
+    if (!configurator) return;
+    if (searchParams.get('configurar') !== '1') return;
+
+    autoOpenTriggered.current = true;
+    const timer = window.setTimeout(() => setConfiguratorOpen(true), 500);
+
+    // Limpia el query param para que recargar / compartir la URL no
+    // vuelva a dispararlo (evita loops si el usuario cierra el modal).
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('configurar');
+        return next;
+      },
+      { replace: true },
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [configurator, searchParams, setSearchParams]);
+
   return (
     <main className="mx-auto max-w-7xl px-6 md:px-10">
       {/* ── Breadcrumb / volver ────────────────────────── */}
@@ -108,10 +141,25 @@ function ProductView({ product }: { product: ProductPublic }) {
         </Link>
       </nav>
 
+      {/* ── Configurador (slide-over) ──────────────────── */}
+      {configurator && (
+        <ProductConfigurator
+          config={configurator}
+          productRef={product.ref}
+          whatsappNumber={product.whatsappNumber}
+          open={configuratorOpen}
+          onClose={() => setConfiguratorOpen(false)}
+        />
+      )}
+
       {/* ── Hero del producto: galería + info ──────────── */}
       <section className="grid grid-cols-1 gap-x-16 gap-y-10 pb-16 md:grid-cols-[1.1fr_1fr] md:pb-24">
         <Gallery product={product} />
-        <Info       product={product} />
+        <Info
+          product={product}
+          hasConfigurator={!!configurator}
+          onPersonalize={() => setConfiguratorOpen(true)}
+        />
       </section>
 
       {/* ── Specs por talla ────────────────────────────── */}
@@ -190,7 +238,13 @@ function Gallery({ product }: { product: ProductPublic }) {
 }
 
 /* ─── Info / CTA ─── */
-function Info({ product }: { product: ProductPublic }) {
+interface InfoProps {
+  product:          ProductPublic;
+  hasConfigurator:  boolean;
+  onPersonalize:    () => void;
+}
+
+function Info({ product, hasConfigurator, onPersonalize }: InfoProps) {
   const waUrl = `https://wa.me/${product.whatsappNumber}?text=${encodeURIComponent(
     product.whatsappMessage ||
       `Hola, me interesa el modelo ${product.name} (${product.ref}).`,
@@ -237,16 +291,28 @@ function Info({ product }: { product: ProductPublic }) {
         </p>
       )}
 
-      {/* CTA WhatsApp */}
-      <a
-        href={waUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-10 inline-flex items-center gap-3 border border-amber/60 bg-ink-soft px-6 py-4 text-[11px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:bg-ink"
-      >
-        <MessageCircle size={16} strokeWidth={1.2} />
-        Cotizar por WhatsApp
-      </a>
+      {/* CTAs — Personalizar (si aplica) + WhatsApp */}
+      <div className="mt-10 flex flex-col gap-3">
+        {hasConfigurator && (
+          <button
+            type="button"
+            onClick={onPersonalize}
+            className="inline-flex items-center gap-3 border border-bone/30 bg-ink-soft px-6 py-4 text-[11px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:border-bone/60 hover:bg-ink"
+          >
+            <Settings2 size={15} strokeWidth={1.2} />
+            Personalizar
+          </button>
+        )}
+        <a
+          href={waUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-3 border border-amber/60 bg-ink-soft px-6 py-4 text-[11px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:bg-ink"
+        >
+          <MessageCircle size={16} strokeWidth={1.2} />
+          Cotizar por WhatsApp
+        </a>
+      </div>
 
       <p className="mt-4 max-w-md text-[11px] font-light italic text-mute-dark">
         Cada pieza puede ajustarse en medidas y acabado.

@@ -7,7 +7,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ExternalLink, Save, Star } from 'lucide-react';
+import { ArrowLeft, Check, Copy, ExternalLink, Save, Sparkles, Star } from 'lucide-react';
 import { getProduct, updateProduct } from '@/api/products';
 import { ImageUploader } from '@/components/ImageUploader';
 import type { ProductPublic, ProductUpdateInput } from '@/types/product';
@@ -236,6 +236,9 @@ export function ProductoDetail() {
           }}
         />
 
+        {/* Link de personalización — solo productos con configurador */}
+        <PersonalizationLinkBlock slug={data.slug} />
+
         {/* Read-only: tallas, precios, specs (sin imágenes ya) */}
         <ReadOnlyBlock product={data} />
 
@@ -382,6 +385,90 @@ function ToggleBig({ on, onClick, label, icon }: ToggleBigProps) {
 /* ────────────────────────────────────────────────────────
  * Bloque read-only para campos complejos (sprint futuro)
  * ──────────────────────────────────────────────────────── */
+
+/* ────────────────────────────────────────────────────────
+ * Link de personalización (solo productos con configurador).
+ *
+ * Al abrir el link público, el sitio muestra la página del producto
+ * y abre el modal del configurador 500ms después. Útil para mandar
+ * directo al cliente por WhatsApp / correo.
+ *
+ * NOTA: mantén esta lista sincronizada con
+ *   frontend/src/data/configurators.ts → CONFIGURATORS
+ * cuando agreguen nuevos personalizadores.
+ * ──────────────────────────────────────────────────────── */
+const PERSONALIZABLE_SLUGS = ['lumina'] as const;
+const PUBLIC_SITE_BASE = 'https://d2pgrgppb9pktx.cloudfront.net';
+
+function PersonalizationLinkBlock({ slug }: { slug: string }) {
+  const hasConfigurator = PERSONALIZABLE_SLUGS.includes(slug as typeof PERSONALIZABLE_SLUGS[number]);
+  const [copied, setCopied] = useState(false);
+
+  if (!hasConfigurator) return null;
+
+  const link = `${PUBLIC_SITE_BASE}/catalogo/${slug}?configurar=1`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback para navegadores sin Clipboard API
+      const ta = document.createElement('textarea');
+      ta.value = link;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <section className="border border-amber/30 bg-ink-soft p-6">
+      <header className="mb-3 flex items-center gap-2">
+        <Sparkles size={14} strokeWidth={1.2} className="text-amber" />
+        <h2 className="text-[11px] font-light uppercase text-amber tracking-[0.3em]">
+          Link de personalización
+        </h2>
+      </header>
+      <p className="mb-5 max-w-xl text-[11px] font-light leading-relaxed text-mute">
+        Comparte este link directo con un cliente (por WhatsApp, correo, etc.).
+        Al abrirlo verá la página del producto y, medio segundo después, se
+        abrirá automáticamente el configurador para que arme su pieza.
+      </p>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <code className="flex-1 break-all border border-line bg-ink px-3 py-2 text-[11px] font-light text-bone">
+          {link}
+        </code>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={copy}
+            className="inline-flex items-center gap-2 border border-amber/60 px-4 py-2 text-[10px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:bg-ink"
+          >
+            {copied
+              ? <><Check size={12} strokeWidth={1.5} /> Copiado</>
+              : <><Copy size={12} strokeWidth={1.2} /> Copiar</>
+            }
+          </button>
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 border border-line px-4 py-2 text-[10px] font-light uppercase text-mute tracking-[0.25em] transition-colors hover:text-bone hover:bg-ink"
+          >
+            <ExternalLink size={12} strokeWidth={1.2} />
+            Probar
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function ReadOnlyBlock({ product }: { product: ProductPublic }) {
   const tallasCount = Object.keys(product.tallas ?? {}).length;
