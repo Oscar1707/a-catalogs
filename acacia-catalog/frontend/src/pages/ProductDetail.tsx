@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ArrowLeft, MessageCircle, Settings2 } from 'lucide-react';
 import { fetchProducts } from '@/api/products';
+import { trackPageView } from '@/api/analytics';
 import { getConfigurator } from '@/data/configurators';
 import { ProductConfigurator } from '@/components/ProductConfigurator';
 import type { PriceEntry, ProductPublic } from '@/types/product';
@@ -99,6 +100,11 @@ export function ProductDetail() {
 function ProductView({ product }: { product: ProductPublic }) {
   const [configuratorOpen, setConfiguratorOpen] = useState(false);
   const configurator = getConfigurator(product.slug);
+
+  // Registrar visita una sola vez al montar el componente
+  useEffect(() => {
+    trackPageView(product.slug);
+  }, []);
   const [searchParams, setSearchParams] = useSearchParams();
   // Garantiza que el auto-open ocurra solo una vez por carga (no en cada render
   // ni si el usuario cierra el modal y vuelve a aparecer el param por algún motivo).

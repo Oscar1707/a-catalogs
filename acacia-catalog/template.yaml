@@ -16,6 +16,7 @@ Globals:
         NOTIFICATION_EMAIL:         !Ref NotificationEmail
         ADMIN_PASSWORD_HASH_PARAM:  !Ref AdminPasswordHashParam
         JWT_SECRET_PARAM:           !Ref JwtSecretParam
+        ANALYTICS_TABLE_NAME:       !Ref AnalyticsTable
 
 Parameters:
   Environment:
@@ -846,6 +847,87 @@ Resources:
             Path: /admin/costings/{id}
             Method: DELETE
 
+  # ─── DynamoDB: Tabla de analytics ────────────────────────────────────────────
+  AnalyticsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: acacia-analytics
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  # ─── Lambda: POST /analytics/pageview ────────────────────────────────────────
+  TrackPageViewFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/trackPageView.ts
+    Properties:
+      FunctionName: acacia-track-pageview
+      CodeUri: backend/
+      Handler: src/handlers/trackPageView.handler
+      Description: "Registra visita de página + IP (público)"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AnalyticsTable
+      Events:
+        TrackPageView:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /analytics/pageview
+            Method: POST
+
+  # ─── Lambda: GET /admin/analytics ────────────────────────────────────────────
+  AdminGetAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminGetAnalytics.ts
+    Properties:
+      FunctionName: acacia-admin-get-analytics
+      CodeUri: backend/
+      Handler: src/handlers/adminGetAnalytics.handler
+      Description: "Admin · analytics de visitas y top productos"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AnalyticsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        GetAnalytics:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/analytics
+            Method: GET
+
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
@@ -988,3 +1070,7 @@ Outputs:
   QuotesTableName:
     Description: "Tabla DynamoDB de cotizaciones"
     Value: !Ref QuotesTable
+
+  AnalyticsTableName:
+    Description: "Tabla DynamoDB de analytics"
+    Value: !Ref AnalyticsTable
