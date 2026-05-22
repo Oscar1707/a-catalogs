@@ -10,10 +10,17 @@ import {
   PutCommand,
   QueryCommand,
   UpdateCommand,
+  DeleteCommand,
 }                                                            from '@aws-sdk/lib-dynamodb';
 import { ProductItem, ProductUpdateInput, ProductCreateInput } from '../types/product';
 import { QuoteItem, NoteItem, QuoteStatus }                  from '../types/quote';
 import { SlideItem }                                         from '../types/slide';
+import {
+  CostingCreateInput,
+  CostingItemDB,
+  CostingPublic,
+  CostingUpdateInput,
+} from '../types/costing';
 
 // ── Cliente singleton ──────────────────────────────────────────────────────────
 const raw = new DynamoDBClient({
@@ -454,4 +461,128 @@ export async function addQuoteNote(
   });
 
   return item;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  COSTINGS — costeo por modelo (acacia-products, prefijo PK: COSTING#)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function newId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function toPublic(item: CostingItemDB): CostingPublic {
+  const { PK: _pk, SK: _sk, ...rest } = item;
+  return rest as CostingPublic;
+}
+
+export async function scanAllCostings(): Promise<CostingPublic[]> {
+  const items: CostingItemDB[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix) AND SK = :sk',
+      ExpressionAttributeValues: { ':prefix': 'COSTING#', ':sk': 'METADATA' },
+      ExclusiveStartKey:         lastKey,
+    }));
+
+    items.push(...((res.Items ?? []) as CostingItemDB[]));
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  return items
+    .map(toPublic)
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+}
+
+export async function getCostingById(id: string): Promise<CostingPublic | null> {
+  const res = await dynamo.send(new GetCommand({
+    TableName: TABLE,
+    Key:       { PK: `COSTING#${id}`, SK: 'METADATA' },
+  }));
+  return res.Item ? toPublic(res.Item as CostingItemDB) : null;
+}
+
+export async function createCosting(
+  input: CostingCreateInput,
+): Promise<CostingPublic> {
+  const id  = newId();
+  const now = new Date().toISOString();
+
+  const item: CostingItemDB = {
+    PK:          `COSTING#${id}`,
+    SK:          'METADATA',
+    id,
+    productName: input.productName,
+    productId:   input.productId,
+    notes:       input.notes,
+    items:       input.items,
+    marginPct:   input.marginPct,
+    ivaIncluded: input.ivaIncluded,
+    createdAt:   now,
+    updatedAt:   now,
+  };
+
+  await dynamo.send(new PutCommand({
+    TableName:           TABLE,
+    Item:                item,
+    ConditionExpression: 'attribute_not_exists(PK)',
+  }));
+
+  return toPublic(item);
+}
+
+const COSTING_RESERVED = new Set(['name']);
+
+export async function updateCosting(
+  id: string,
+  patch: CostingUpdateInput,
+): Promise<CostingPublic> {
+  const sets: string[] = [];
+  const exprValues: Record<string, unknown> = {};
+  const exprNames: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (COSTING_RESERVED.has(key)) {
+      const nameKey  = `#${key}`;
+      const valueKey = `:${key}`;
+      exprNames[nameKey]   = key;
+      exprValues[valueKey] = value;
+      sets.push(`${nameKey} = ${valueKey}`);
+    } else {
+      const valueKey = `:${key}`;
+      exprValues[valueKey] = value;
+      sets.push(`${key} = ${valueKey}`);
+    }
+  }
+
+  exprValues[':updatedAt'] = new Date().toISOString();
+  sets.push('updatedAt = :updatedAt');
+
+  if (sets.length === 1) {
+    throw new Error('NO_FIELDS_TO_UPDATE');
+  }
+
+  const res = await dynamo.send(new UpdateCommand({
+    TableName:                 TABLE,
+    Key:                       { PK: `COSTING#${id}`, SK: 'METADATA' },
+    UpdateExpression:          `SET ${sets.join(', ')}`,
+    ExpressionAttributeValues: exprValues,
+    ExpressionAttributeNames:  Object.keys(exprNames).length > 0 ? exprNames : undefined,
+    ConditionExpression:       'attribute_exists(PK)',
+    ReturnValues:              'ALL_NEW',
+  }));
+
+  return toPublic(res.Attributes as CostingItemDB);
+}
+
+export async function deleteCosting(id: string): Promise<void> {
+  await dynamo.send(new DeleteCommand({
+    TableName:           TABLE,
+    Key:                 { PK: `COSTING#${id}`, SK: 'METADATA' },
+    ConditionExpression: 'attribute_exists(PK)',
+  }));
 }

@@ -4,7 +4,7 @@
 
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, FileText, LayoutGrid, Sliders } from 'lucide-react';
+import { ArrowUpRight, Calculator, FileText, LayoutGrid, Scissors, Sliders } from 'lucide-react';
 
 const SECTIONS = [
   {
@@ -20,6 +20,22 @@ const SECTIONS = [
     desc:     'Activar/desactivar piezas, editar datos, marcar destacados.',
     to:       '/productos',
     icon:     LayoutGrid,
+    soon:     'Disponible',
+    enabled:  true,
+  },
+  {
+    label:    'Cortes',
+    desc:     'Calcular consumo y distribución de cortes sobre tableros.',
+    to:       '/cortes',
+    icon:     Scissors,
+    soon:     'Disponible',
+    enabled:  true,
+  },
+  {
+    label:    'Costos',
+    desc:     'Calcular costo, margen y precio final por modelo.',
+    to:       '/costos',
+    icon:     Calculator,
     soon:     'Disponible',
     enabled:  true,
   },

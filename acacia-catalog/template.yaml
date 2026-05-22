@@ -182,7 +182,7 @@ Resources:
       Name: AcaciaCatalogApi
       StageName: !Ref Environment
       Cors:
-        AllowMethods: "'GET,POST,PATCH,OPTIONS'"
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
         AllowOrigin: "'*'"
 
@@ -675,6 +675,176 @@ Resources:
             RestApiId: !Ref CatalogApi
             Path: /admin/products/{id}
             Method: PATCH
+
+  # ─── Lambda: GET /admin/costings ─────────────────────────────────────────────
+  AdminListCostingsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListCostings.ts
+    Properties:
+      FunctionName: acacia-admin-list-costings
+      CodeUri: backend/
+      Handler: src/handlers/adminListCostings.handler
+      Description: "Admin · lista de costeos por modelo"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListCostings:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/costings
+            Method: GET
+
+  # ─── Lambda: POST /admin/costings ────────────────────────────────────────────
+  AdminCreateCostingFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminCreateCosting.ts
+    Properties:
+      FunctionName: acacia-admin-create-costing
+      CodeUri: backend/
+      Handler: src/handlers/adminCreateCosting.handler
+      Description: "Admin · crea un costeo nuevo"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        CreateCosting:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/costings
+            Method: POST
+
+  # ─── Lambda: GET /admin/costings/{id} ────────────────────────────────────────
+  AdminGetCostingFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminGetCosting.ts
+    Properties:
+      FunctionName: acacia-admin-get-costing
+      CodeUri: backend/
+      Handler: src/handlers/adminGetCosting.handler
+      Description: "Admin · obtiene un costeo por id"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        GetCosting:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/costings/{id}
+            Method: GET
+
+  # ─── Lambda: PUT /admin/costings/{id} ────────────────────────────────────────
+  AdminUpdateCostingFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpdateCosting.ts
+    Properties:
+      FunctionName: acacia-admin-update-costing
+      CodeUri: backend/
+      Handler: src/handlers/adminUpdateCosting.handler
+      Description: "Admin · actualiza un costeo existente"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpdateCosting:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/costings/{id}
+            Method: PUT
+
+  # ─── Lambda: DELETE /admin/costings/{id} ─────────────────────────────────────
+  AdminDeleteCostingFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminDeleteCosting.ts
+    Properties:
+      FunctionName: acacia-admin-delete-costing
+      CodeUri: backend/
+      Handler: src/handlers/adminDeleteCosting.handler
+      Description: "Admin · elimina un costeo"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        DeleteCosting:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/costings/{id}
+            Method: DELETE
 
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:

@@ -11,7 +11,7 @@ interface ApiError      { ok: false; error: { code: string; message: string; req
 type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
 interface Options {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?:   unknown;
 }
 
