@@ -928,6 +928,142 @@ Resources:
             Path: /admin/analytics
             Method: GET
 
+  # ─── Lambda: GET /admin/slides ───────────────────────────────────────────────
+  AdminListSlidesFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListSlides.ts
+    Properties:
+      FunctionName: acacia-admin-list-slides
+      CodeUri: backend/
+      Handler: src/handlers/adminListSlides.handler
+      Description: "Admin · lista todos los slides del carrusel"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListSlides:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/slides
+            Method: GET
+
+  # ─── Lambda: PUT /admin/slides/{id} ──────────────────────────────────────────
+  AdminUpsertSlideFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpsertSlide.ts
+    Properties:
+      FunctionName: acacia-admin-upsert-slide
+      CodeUri: backend/
+      Handler: src/handlers/adminUpsertSlide.handler
+      Description: "Admin · crea o actualiza un slide"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpsertSlide:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/slides/{id}
+            Method: PUT
+
+  # ─── Lambda: DELETE /admin/slides/{id} ───────────────────────────────────────
+  AdminDeleteSlideFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminDeleteSlide.ts
+    Properties:
+      FunctionName: acacia-admin-delete-slide
+      CodeUri: backend/
+      Handler: src/handlers/adminDeleteSlide.handler
+      Description: "Admin · elimina un slide"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        DeleteSlide:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/slides/{id}
+            Method: DELETE
+
+  # ─── Lambda: POST /admin/uploads/slide-image ─────────────────────────────────
+  AdminPresignSlideImageFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminPresignSlideImage.ts
+    Properties:
+      FunctionName: acacia-admin-presign-slide-image
+      CodeUri: backend/
+      Handler: src/handlers/adminPresignSlideImage.handler
+      Description: "Admin · presigned URL para subir imagen de slide"
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref ImagesBucket
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        PresignSlideImage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/uploads/slide-image
+            Method: POST
+
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl

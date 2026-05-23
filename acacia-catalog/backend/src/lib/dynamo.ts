@@ -281,6 +281,42 @@ export async function scanActiveSlides(): Promise<SlideItem[]> {
   return items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 }
 
+// ── scanAllSlides (admin) ─────────────────────────────────────────────────────
+// Igual que scanActiveSlides pero sin filtro de active — para el panel admin.
+export async function scanAllSlides(): Promise<SlideItem[]> {
+  const items: SlideItem[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'SLIDE#' },
+      ProjectionExpression:      SLIDE_PROJECTION,
+      ExpressionAttributeNames:  SLIDE_EXPR_NAMES,
+      ExclusiveStartKey:         lastKey,
+    }));
+    items.push(...((res.Items ?? []) as SlideItem[]));
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+}
+
+// ── putSlide ──────────────────────────────────────────────────────────────────
+export async function putSlide(item: SlideItem): Promise<void> {
+  await dynamo.send(new PutCommand({
+    TableName: TABLE,
+    Item:      item,
+  }));
+}
+
+// ── deleteSlide ───────────────────────────────────────────────────────────────
+export async function deleteSlide(id: string): Promise<void> {
+  await dynamo.send(new DeleteCommand({
+    TableName: TABLE,
+    Key: { PK: `SLIDE#${id}`, SK: 'METADATA' },
+  }));
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  COTIZACIONES — operaciones sobre QUOTES_TABLE (acacia-quotes)
 // ═════════════════════════════════════════════════════════════════════════════

@@ -71,3 +71,33 @@ export async function presignProductImageUpload(
 
   return { uploadUrl, key, publicUrl };
 }
+
+/**
+ * Genera un presigned URL PUT para subir una imagen de slide.
+ * Key: `slides/<8-hex>.webp`
+ */
+export async function presignSlideImageUpload(
+  contentType: string,
+  contentLength: number,
+): Promise<PresignedUploadResult> {
+  if (!ACCEPTED_CONTENT_TYPES.includes(contentType)) {
+    throw new Error(`UNSUPPORTED_CONTENT_TYPE:${contentType}`);
+  }
+  if (contentLength <= 0 || contentLength > MAX_IMAGE_BYTES) {
+    throw new Error(`INVALID_SIZE:${contentLength}`);
+  }
+  const randomId = randomBytes(4).toString('hex');
+  const key      = `slides/${randomId}.webp`;
+  const cmd = new PutObjectCommand({
+    Bucket:        BUCKET,
+    Key:           key,
+    ContentType:   contentType,
+    ContentLength: contentLength,
+    CacheControl:  'public, max-age=31536000, immutable',
+  });
+  const uploadUrl = await getSignedUrl(s3, cmd, {
+    expiresIn:       PRESIGN_EXPIRES_SECONDS,
+    signableHeaders: new Set(['content-type', 'content-length']),
+  });
+  return { uploadUrl, key, publicUrl: `https://${BUCKET}.s3.amazonaws.com/${key}` };
+}
