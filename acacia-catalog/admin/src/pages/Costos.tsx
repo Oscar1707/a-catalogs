@@ -10,9 +10,15 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   BarChart3,
+  BookOpen,
   Calculator,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Plus,
   Save,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
@@ -31,6 +37,8 @@ import {
   type CostingCreateInput,
   type CostingItem,
 } from '@/types/costing';
+import { addMaterial, deleteMaterial, listMaterials, updateMaterial } from '@/lib/materialsStorage';
+import type { Material } from '@/types/material';
 
 const IVA_RATE = 0.16;
 
@@ -89,6 +97,17 @@ export function Costos() {
   const [draft, setDraft] = useState<DraftState>(blankDraft);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [materials, setMaterials]   = useState<Material[]>(() => listMaterials());
+  const [showLibrary, setShowLibrary] = useState(false);
+  // Modal agregar/editar material
+  const [matModal, setMatModal] = useState<{
+    open: boolean;
+    editing?: Material;
+    form: { name: string; qty: string; unit: string; unitPrice: string };
+  }>({ open: false, form: { name: '', qty: '1', unit: 'pz', unitPrice: '0' } });
+  // Picker: qué item del draft está esperando un material de la biblioteca
+  const [pickerForItem, setPickerForItem] = useState<string | null>(null);
+  const [pickerSearch, setPickerSearch]   = useState('');
 
   const productsQ = useQuery({
     queryKey: ['products-admin'],
@@ -204,6 +223,86 @@ export function Costos() {
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al eliminar.');
     }
+  };
+
+  const refreshMaterials = () => setMaterials(listMaterials());
+
+  const openAddMaterial = () =>
+    setMatModal({ open: true, editing: undefined, form: { name: '', qty: '1', unit: 'pz', unitPrice: '0' } });
+
+  const openEditMaterial = (m: Material) =>
+    setMatModal({ open: true, editing: m, form: { name: m.name, qty: String(m.qty), unit: m.unit, unitPrice: String(m.unitPrice) } });
+
+  const closeMaterialModal = () =>
+    setMatModal({ open: false, form: { name: '', qty: '1', unit: 'pz', unitPrice: '0' } });
+
+  const saveMaterial = () => {
+    const { name, qty, unit, unitPrice } = matModal.form;
+    if (!name.trim()) return;
+    if (matModal.editing) {
+      updateMaterial(matModal.editing.id, {
+        name: name.trim(),
+        qty: parseFloat(qty) || 1,
+        unit: unit.trim() || 'pz',
+        unitPrice: parseFloat(unitPrice) || 0,
+      });
+    } else {
+      addMaterial({
+        name: name.trim(),
+        qty: parseFloat(qty) || 1,
+        unit: unit.trim() || 'pz',
+        unitPrice: parseFloat(unitPrice) || 0,
+      });
+    }
+    refreshMaterials();
+    closeMaterialModal();
+  };
+
+  const removeMaterial = (id: string) => {
+    deleteMaterial(id);
+    refreshMaterials();
+  };
+
+  // Insertar un material de la biblioteca como nuevo item en el draft
+  const pickMaterial = (m: Material) => {
+    if (pickerForItem) {
+      // Reemplaza el item existente con los datos del material
+      updateItem(pickerForItem, {
+        name:      m.name,
+        qty:       m.qty,
+        unit:      m.unit,
+        unitPrice: m.unitPrice,
+      });
+      setPickerForItem(null);
+      setPickerSearch('');
+    } else {
+      // Agrega como nuevo item en materiales
+      setDraft((d) => ({
+        ...d,
+        items: [...d.items, {
+          id:        newId(),
+          name:      m.name,
+          category:  'materiales' as const,
+          qty:       m.qty,
+          unit:      m.unit,
+          unitPrice: m.unitPrice,
+        }],
+      }));
+    }
+  };
+
+  const onDuplicate = (c: Costing) => {
+    setDraft({
+      id:          undefined,                          // sin id → guarda como nuevo
+      productName: `${c.productName} (copia)`,
+      productId:   c.productId,
+      notes:       c.notes ?? '',
+      items:       c.items.map((it) => ({ ...it, id: newId() })), // nuevos ids locales
+      marginPct:   c.marginPct,
+      ivaIncluded: c.ivaIncluded,
+    });
+    setSavedAt(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -328,14 +427,25 @@ export function Costos() {
                         <span className="col-span-1 text-right text-sm font-light text-mute">
                           {money(subtotal)}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(it.id)}
-                          aria-label="Quitar"
-                          className="col-span-1 inline-flex items-center justify-end text-mute-dark hover:text-amber"
-                        >
-                          <X size={14} strokeWidth={1.4} />
-                        </button>
+                        <div className="col-span-1 inline-flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => { setPickerForItem(it.id); setPickerSearch(''); }}
+                            aria-label="Insertar de biblioteca"
+                            title="Insertar material guardado"
+                            className="text-mute-dark hover:text-bone"
+                          >
+                            <BookOpen size={12} strokeWidth={1.4} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(it.id)}
+                            aria-label="Quitar"
+                            className="text-mute-dark hover:text-amber"
+                          >
+                            <X size={14} strokeWidth={1.4} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -471,6 +581,93 @@ export function Costos() {
         </aside>
       </section>
 
+      {/* ── Biblioteca de materiales ──────────────────────────────── */}
+      <section className="mt-20 border-t border-line/40 pt-12">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-[10px] font-light uppercase text-mute tracking-[0.3em]">
+            Biblioteca de materiales
+          </h2>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setShowLibrary((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-[10px] font-light uppercase text-mute tracking-[0.25em] hover:text-bone"
+            >
+              {showLibrary ? <ChevronUp size={12} strokeWidth={1.4} /> : <ChevronDown size={12} strokeWidth={1.4} />}
+              {showLibrary ? 'Ocultar' : 'Ver lista'}
+            </button>
+            <button
+              type="button"
+              onClick={openAddMaterial}
+              className="inline-flex items-center gap-1.5 text-[10px] font-light uppercase text-amber tracking-[0.25em] hover:text-bone"
+            >
+              <Plus size={12} strokeWidth={1.4} /> Agregar material
+            </button>
+          </div>
+        </div>
+
+        {showLibrary && (
+          materials.length === 0 ? (
+            <p className="text-[12px] font-light italic text-mute-dark">
+              Sin materiales guardados. Usa "Agregar material" para crear tu biblioteca.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-line/40">
+                    {['Material', 'Cant.', 'Unidad', '$ Unit.', 'Subtotal', ''].map((h) => (
+                      <th key={h} className="pb-2 pr-4 text-[9px] font-light uppercase text-mute-dark tracking-[0.15em]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials.map((m) => {
+                    const sub = m.qty * m.unitPrice;
+                    return (
+                      <tr key={m.id} className="border-b border-line/20 hover:bg-ink-soft">
+                        <td className="py-2.5 pr-4 text-sm font-light text-bone">{m.name}</td>
+                        <td className="py-2.5 pr-4 text-sm font-light text-mute">{m.qty}</td>
+                        <td className="py-2.5 pr-4 text-sm font-light text-mute">{m.unit}</td>
+                        <td className="py-2.5 pr-4 text-sm font-light text-mute">{money(m.unitPrice)}</td>
+                        <td className="py-2.5 pr-4 text-sm font-light text-mute">{money(sub)}</td>
+                        <td className="py-2.5">
+                          <div className="inline-flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => pickMaterial(m)}
+                              className="text-[10px] font-light uppercase text-amber tracking-[0.2em] hover:text-bone"
+                            >
+                              + Agregar al costeo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditMaterial(m)}
+                              className="text-mute-dark hover:text-bone"
+                              aria-label="Editar"
+                            >
+                              <Save size={12} strokeWidth={1.3} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeMaterial(m.id)}
+                              className="text-mute-dark hover:text-amber"
+                              aria-label="Eliminar"
+                            >
+                              <Trash2 size={12} strokeWidth={1.3} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+      </section>
+
       {/* ── Costeos guardados ──────────────────────────────────────── */}
       <section className="mt-20 border-t border-line/40 pt-12">
         <h2 className="mb-6 text-[10px] font-light uppercase text-mute tracking-[0.3em]">
@@ -499,14 +696,25 @@ export function Costos() {
                         {new Date(c.updatedAt).toLocaleDateString('es-MX')} · margen {c.marginPct}%
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(c.id)}
-                      aria-label="Eliminar"
-                      className="text-mute-dark hover:text-amber"
-                    >
-                      <Trash2 size={14} strokeWidth={1.3} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onDuplicate(c)}
+                        aria-label="Duplicar"
+                        title="Duplicar costeo"
+                        className="text-mute-dark hover:text-bone"
+                      >
+                        <Copy size={14} strokeWidth={1.3} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(c.id)}
+                        aria-label="Eliminar"
+                        className="text-mute-dark hover:text-amber"
+                      >
+                        <Trash2 size={14} strokeWidth={1.3} />
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-4 flex items-baseline justify-between">
                     <span className="text-[10px] font-light uppercase text-mute tracking-[0.2em]">Costo</span>
@@ -529,6 +737,150 @@ export function Costos() {
           </ul>
         )}
       </section>
+      {/* ── Modal: agregar / editar material ──────────────────────── */}
+      {matModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-sm border border-line/60 bg-ink-soft p-8">
+            <div className="mb-6 flex items-center justify-between">
+              <h3 className="text-[10px] font-light uppercase text-bone tracking-[0.3em]">
+                {matModal.editing ? 'Editar material' : 'Nuevo material'}
+              </h3>
+              <button type="button" onClick={closeMaterialModal} className="text-mute-dark hover:text-bone">
+                <X size={16} strokeWidth={1.4} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-[10px] font-light uppercase text-mute tracking-[0.25em]">Título</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={matModal.form.name}
+                  onChange={(e) => setMatModal((s) => ({ ...s, form: { ...s.form, name: e.target.value } }))}
+                  placeholder="Tablero MDF, LED 5m, Bisagras…"
+                  className="w-full rounded-sm border border-line/60 bg-ink px-3 py-2.5 text-sm font-light text-bone placeholder:text-mute-dark focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-light uppercase text-mute tracking-[0.25em]">Cantidad</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.1}
+                    value={matModal.form.qty}
+                    onChange={(e) => setMatModal((s) => ({ ...s, form: { ...s.form, qty: e.target.value } }))}
+                    className="w-full rounded-sm border border-line/60 bg-ink px-3 py-2.5 text-sm font-light text-bone focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-light uppercase text-mute tracking-[0.25em]">Unidad</label>
+                  <input
+                    type="text"
+                    value={matModal.form.unit}
+                    onChange={(e) => setMatModal((s) => ({ ...s, form: { ...s.form, unit: e.target.value } }))}
+                    placeholder="pz, m, kg…"
+                    className="w-full rounded-sm border border-line/60 bg-ink px-3 py-2.5 text-sm font-light text-bone placeholder:text-mute-dark focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-light uppercase text-mute tracking-[0.25em]">$ Unit.</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.01}
+                    value={matModal.form.unitPrice}
+                    onChange={(e) => setMatModal((s) => ({ ...s, form: { ...s.form, unitPrice: e.target.value } }))}
+                    className="w-full rounded-sm border border-line/60 bg-ink px-3 py-2.5 text-sm font-light text-bone focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Subtotal preview */}
+              {(() => {
+                const sub = (parseFloat(matModal.form.qty) || 0) * (parseFloat(matModal.form.unitPrice) || 0);
+                return sub > 0 ? (
+                  <p className="text-right text-[11px] font-light text-mute">
+                    Subtotal: <span className="text-bone">{money(sub)}</span>
+                  </p>
+                ) : null;
+              })()}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={saveMaterial}
+                disabled={!matModal.form.name.trim()}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-sm bg-amber py-2.5 text-[11px] font-light uppercase text-ink tracking-[0.3em] transition-colors hover:bg-amber-soft disabled:opacity-40"
+              >
+                <Check size={12} strokeWidth={1.6} />
+                {matModal.editing ? 'Actualizar' : 'Guardar material'}
+              </button>
+              <button
+                type="button"
+                onClick={closeMaterialModal}
+                className="rounded-sm border border-line/60 px-5 py-2.5 text-[11px] font-light uppercase text-mute tracking-[0.25em] hover:text-bone"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Picker: seleccionar material de la biblioteca ─────────── */}
+      {pickerForItem !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-sm border border-line/60 bg-ink-soft p-8">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[10px] font-light uppercase text-bone tracking-[0.3em]">Insertar material</h3>
+              <button type="button" onClick={() => setPickerForItem(null)} className="text-mute-dark hover:text-bone">
+                <X size={16} strokeWidth={1.4} />
+              </button>
+            </div>
+
+            <div className="relative mb-4">
+              <Search size={14} strokeWidth={1.3} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute-dark" />
+              <input
+                type="text"
+                autoFocus
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="Buscar material…"
+                className="w-full rounded-sm border border-line/60 bg-ink py-2.5 pl-9 pr-3 text-sm font-light text-bone placeholder:text-mute-dark focus:outline-none"
+              />
+            </div>
+
+            {materials.length === 0 ? (
+              <p className="py-6 text-center text-[12px] font-light italic text-mute-dark">
+                Sin materiales guardados aún.
+              </p>
+            ) : (
+              <ul className="max-h-72 overflow-y-auto divide-y divide-line/30">
+                {materials
+                  .filter((m) => m.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+                  .map((m) => (
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        onClick={() => pickMaterial(m)}
+                        className="flex w-full items-center justify-between gap-4 px-1 py-3 text-left hover:bg-ink"
+                      >
+                        <span className="text-sm font-light text-bone">{m.name}</span>
+                        <span className="shrink-0 text-[11px] font-light text-mute">
+                          {m.qty} {m.unit} · {money(m.unitPrice)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
