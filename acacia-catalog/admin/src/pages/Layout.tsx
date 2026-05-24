@@ -2,8 +2,9 @@
 // Layout autenticado. Header propio del admin + outlet de sub-rutas.
 
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, Shield } from 'lucide-react';
+import { LogOut, Moon, Shield, Sun } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 
 const NAV = [
   { label: 'Inicio',        to: '/'             },
@@ -22,6 +23,7 @@ const LINK_ACTIVE   = 'text-bone';
 export function Layout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const { toggle, isDark } = useTheme();
 
   const handleLogout = () => {
     logout();
@@ -65,14 +67,29 @@ export function Layout() {
             </ul>
           </nav>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 text-[10px] font-light uppercase text-mute tracking-[0.2em] transition-colors hover:text-bone"
-          >
-            <LogOut size={12} strokeWidth={1.2} />
-            Salir
-          </button>
+          <div className="flex items-center gap-4">
+            {/* Toggle tema */}
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              className="inline-flex items-center justify-center rounded-sm border border-line/60 p-1.5 text-mute transition-colors hover:border-line hover:text-bone"
+            >
+              {isDark
+                ? <Sun  size={13} strokeWidth={1.3} />
+                : <Moon size={13} strokeWidth={1.3} />
+              }
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-2 text-[10px] font-light uppercase text-mute tracking-[0.2em] transition-colors hover:text-bone"
+            >
+              <LogOut size={12} strokeWidth={1.2} />
+              Salir
+            </button>
+          </div>
         </div>
 
         {/* Nav mobile (scrollable) */}
