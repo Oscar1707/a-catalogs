@@ -93,6 +93,15 @@ export type BoardSource =
   | { kind: 'new' }
   | { kind: 'remnant'; boardId: string; remnantId: string };
 
+/** Layout de UN tablero físico dentro de un proyecto multi-tablero. */
+export interface BoardLayout {
+  boardIndex: number;    // 0, 1, 2…
+  placed:     PlacedCut[];
+  remnants:   Remnant[];
+  usedArea:   number;
+  totalArea:  number;
+}
+
 export interface SavedBoard {
   id:           string;
   name:         string;
@@ -102,8 +111,13 @@ export interface SavedBoard {
   boardLength:  number;
   kerfMm:       number;
   cuts:         Cut[];
-  placed:       PlacedCut[];
+  /** Multi-tablero: uno por tablero físico usado. */
+  boards:       BoardLayout[];
+  /** Piezas que no cupieron en ningún tablero. */
   unplaced:     { cutId: string; copyIdx: number; label: string }[];
+  /** Sobrantes del último tablero (para reutilizar). */
   remnants:     Remnant[];
   source:       BoardSource;
+  /** @deprecated Sustituido por boards[0].placed — mantenido por compatibilidad. */
+  placed:       PlacedCut[];
 }

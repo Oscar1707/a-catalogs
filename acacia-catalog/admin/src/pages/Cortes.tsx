@@ -21,7 +21,8 @@ import {
 import { analyzeCut, layoutCuts, type LayoutResult } from '@/lib/cuttingLayout';
 import {
   consumeRemnant,
-  deleteBoard,
+  deleteBoardRemote,
+  fetchBoards,
   listBoards,
   listRemnantsByMaterial,
   saveBoard,
@@ -53,9 +54,11 @@ export function Cortes() {
   const [saved, setSaved]     = useState<SavedBoard[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Recargar tableros guardados al montar.
+  // Cargar tableros al montar: primero del cache local (instantáneo),
+  // luego actualiza desde DynamoDB en segundo plano.
   useEffect(() => {
-    setSaved(listBoards());
+    setSaved(listBoards());                          // cache inmediato
+    fetchBoards().then(setSaved).catch(console.error); // refresh desde API
   }, []);
 
   // Sobrantes disponibles para el material elegido.
@@ -103,7 +106,7 @@ export function Cortes() {
     setLayout(result);
   };
 
-  const onSave = () => {
+  const onSave = async () => {
     if (!layout) return;
     const isEdit = editingId !== null;
     const original = isEdit ? saved.find((b) => b.id === editingId) : undefined;
@@ -116,23 +119,27 @@ export function Cortes() {
       boardLength,
       kerfMm,
       cuts,
-      placed:      layout.placed,
+      boards:      layout.boards,
+      placed:      layout.placed,   // legacy compat
       unplaced:    layout.unplaced,
       remnants:    layout.remnants,
       source,
     };
-    saveBoard(board);
-    // Si es nuevo y partió de un sobrante, consumirlo del tablero origen.
-    // En modo edición el sobrante ya fue consumido la primera vez.
-    if (!isEdit && source.kind === 'remnant') {
-      consumeRemnant(source.boardId, source.remnantId);
+    try {
+      await saveBoard(board);
+      // Si es nuevo y partió de un sobrante, consumirlo del tablero origen.
+      if (!isEdit && source.kind === 'remnant') {
+        await consumeRemnant(source.boardId, source.remnantId);
+      }
+      setSaved(listBoards());
+      setName('');
+      setCuts([emptyCut()]);
+      setLayout(null);
+      setEditingId(null);
+      onPickMaterial(material);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al guardar el tablero.');
     }
-    setSaved(listBoards());
-    setName('');
-    setCuts([emptyCut()]);
-    setLayout(null);
-    setEditingId(null);
-    onPickMaterial(material);
   };
 
   const onEdit = (board: SavedBoard) => {
@@ -145,12 +152,23 @@ export function Cortes() {
     setSource(board.source);
     // Si quedó algún corte vacío, asegurar al menos un row editable.
     setCuts(board.cuts.length > 0 ? board.cuts : [emptyCut()]);
+    // Backward compat: old boards without multi-board support
+    const restoredBoards = (board.boards && board.boards.length > 0)
+      ? board.boards
+      : [{
+          boardIndex: 0,
+          placed:    board.placed,
+          remnants:  board.remnants,
+          usedArea:  board.placed.reduce((s, p) => s + p.width * p.length, 0),
+          totalArea: board.boardWidth * board.boardLength,
+        }];
     setLayout({
+      boards:    restoredBoards,
       placed:    board.placed,
       unplaced:  board.unplaced,
       remnants:  board.remnants,
-      usedArea:  board.placed.reduce((s, p) => s + p.width * p.length, 0),
-      totalArea: board.boardWidth * board.boardLength,
+      usedArea:  restoredBoards.reduce((s, b) => s + b.usedArea, 0),
+      totalArea: restoredBoards.reduce((s, b) => s + b.totalArea, 0),
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -163,10 +181,14 @@ export function Cortes() {
     onPickMaterial(material);
   };
 
-  const onDelete = (id: string) => {
+  const onDelete = async (id: string) => {
     if (editingId === id) onCancelEdit();
-    deleteBoard(id);
-    setSaved(listBoards());
+    try {
+      await deleteBoardRemote(id);
+      setSaved(listBoards());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar el tablero.');
+    }
   };
 
   const utilizationPct = layout
@@ -427,21 +449,42 @@ export function Cortes() {
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
             <div>
               <h2 className="mb-4 text-[10px] font-light uppercase text-mute tracking-[0.3em]">
-                Distribución
+                Distribución{layout.boards.length > 1 ? ` · ${layout.boards.length} tableros` : ''}
               </h2>
-              <BoardCanvas
-                boardWidth={boardWidth}
-                boardLength={boardLength}
-                placed={layout.placed}
-                remnants={layout.remnants}
-              />
+              <div className="space-y-6">
+                {layout.boards.map((bd, i) => (
+                  <div key={bd.boardIndex}>
+                    {layout.boards.length > 1 && (
+                      <p className="mb-2 text-[10px] font-light uppercase text-amber tracking-[0.25em]">
+                        Tablero {i + 1} de {layout.boards.length}
+                        <span className="ml-3 text-mute-dark">
+                          {Math.round((bd.usedArea / bd.totalArea) * 100)}% aprovechamiento
+                        </span>
+                      </p>
+                    )}
+                    <BoardCanvas
+                      boardWidth={boardWidth}
+                      boardLength={boardLength}
+                      placed={bd.placed}
+                      remnants={bd.remnants}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-6">
+              {layout.boards.length > 1 && (
+                <Stat
+                  label="Tableros usados"
+                  value={`${layout.boards.length}`}
+                  hint="Los cortes se distribuyen en múltiples tableros"
+                />
+              )}
               <Stat
                 label="Aprovechamiento"
                 value={`${utilizationPct}%`}
-                hint={`${Math.round(layout.usedArea)} / ${Math.round(layout.totalArea)} cm²`}
+                hint={`${Math.round(layout.usedArea)} / ${Math.round(layout.totalArea)} cm² total`}
               />
               <Stat
                 label="Piezas colocadas"
@@ -531,12 +574,28 @@ export function Cortes() {
                     </div>
                   </div>
 
-                  <BoardCanvas
-                    boardWidth={b.boardWidth}
-                    boardLength={b.boardLength}
-                    placed={b.placed}
-                    remnants={b.remnants}
-                  />
+                  {/* Multi-board: un canvas por tablero físico */}
+                  {(b.boards && b.boards.length > 0 ? b.boards : [{
+                    boardIndex: 0,
+                    placed:    b.placed,
+                    remnants:  b.remnants,
+                    usedArea:  0,
+                    totalArea: 0,
+                  }]).map((bd, bi) => (
+                    <div key={bd.boardIndex} className={bi > 0 ? 'mt-3' : ''}>
+                      {b.boards && b.boards.length > 1 && (
+                        <p className="mb-1 text-[9px] font-light uppercase text-amber/70 tracking-[0.2em]">
+                          Tablero {bi + 1} de {b.boards.length}
+                        </p>
+                      )}
+                      <BoardCanvas
+                        boardWidth={b.boardWidth}
+                        boardLength={b.boardLength}
+                        placed={bd.placed}
+                        remnants={bd.remnants}
+                      />
+                    </div>
+                  ))}
 
                   {/* Lista de especificaciones de los cortes */}
                   {b.cuts.length > 0 && (
@@ -570,7 +629,9 @@ export function Cortes() {
 
                   <div className="mt-3 flex items-center justify-between text-[10px] font-light text-mute">
                     <span>
-                      {b.placed.length} piezas · {b.remnants.length} sobrantes
+                      {b.placed.length} piezas
+                      {b.boards && b.boards.length > 1 && ` · ${b.boards.length} tableros`}
+                      {' · '}{b.remnants.length} sobrantes
                     </span>
                     <span className="text-mute-dark">
                       {new Date(b.createdAt).toLocaleDateString('es-MX')}

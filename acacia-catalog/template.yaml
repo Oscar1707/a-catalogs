@@ -1064,6 +1064,108 @@ Resources:
             Path: /admin/uploads/slide-image
             Method: POST
 
+  # ─── Lambda: GET /admin/boards ───────────────────────────────────────────────
+  AdminListBoardsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListBoards.ts
+    Properties:
+      FunctionName: acacia-admin-list-boards
+      CodeUri: backend/
+      Handler: src/handlers/adminListBoards.handler
+      Description: "Admin · lista tableros de corte guardados"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListBoards:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/boards
+            Method: GET
+
+  # ─── Lambda: PUT /admin/boards/{id} ──────────────────────────────────────────
+  AdminUpsertBoardFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpsertBoard.ts
+    Properties:
+      FunctionName: acacia-admin-upsert-board
+      CodeUri: backend/
+      Handler: src/handlers/adminUpsertBoard.handler
+      Description: "Admin · crea o actualiza un tablero de corte"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpsertBoard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/boards/{id}
+            Method: PUT
+
+  # ─── Lambda: DELETE /admin/boards/{id} ───────────────────────────────────────
+  AdminDeleteBoardFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminDeleteBoard.ts
+    Properties:
+      FunctionName: acacia-admin-delete-board
+      CodeUri: backend/
+      Handler: src/handlers/adminDeleteBoard.handler
+      Description: "Admin · elimina un tablero de corte"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        DeleteBoard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/boards/{id}
+            Method: DELETE
+
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl

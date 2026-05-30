@@ -6,7 +6,7 @@
 // Si un corte tiene `joinable: true` y no cabe en el tablero, se parte
 // en sub-piezas que sí caben (etiquetadas `1/N`, `2/N` …).
 
-import type { Cut, PlacedCut, Remnant } from '@/types/corte';
+import type { BoardLayout, Cut, PlacedCut, Remnant } from '@/types/corte';
 
 interface FreeRect { x: number; y: number; w: number; h: number; }
 
@@ -19,10 +19,17 @@ interface ExpandedCut {
 }
 
 export interface LayoutResult {
+  /** Uno por tablero físico usado (multi-tablero). */
+  boards:   BoardLayout[];
+  /** Unión de todos los placed para compatibilidad con código legacy. */
   placed:   PlacedCut[];
+  /** Piezas que no caben en ningún tablero (demasiado grandes). */
   unplaced: { cutId: string; copyIdx: number; label: string }[];
+  /** Sobrantes del último tablero. */
   remnants: Remnant[];
+  /** Área usada total (suma de todos los tableros). */
   usedArea: number;
+  /** Área total (suma de todos los tableros). */
   totalArea: number;
 }
 
@@ -102,69 +109,21 @@ function splitJoinable(
 }
 
 /**
- * Distribuye los cortes sobre un tablero de boardW × boardH (cm)
- * usando un kerf en mm.
+ * Empaca un conjunto de piezas expandidas sobre UN tablero vacío.
+ * Devuelve las placed, los sobrantes y las piezas que no cupieron.
  */
-export function layoutCuts(
-  boardW:  number,
-  boardH:  number,
-  cuts:    Cut[],
-  kerfMm:  number,
-): LayoutResult {
-  const kerf = kerfMm / 10; // mm → cm
-  const totalArea = boardW * boardH;
-
-  // 1. Expandir cada Cut según qty y, si corresponde, según joinable.
-  const expanded: ExpandedCut[] = [];
-  for (const c of cuts) {
-    if (c.width <= 0 || c.length <= 0 || c.qty <= 0) continue;
-
-    let pieces: { width: number; length: number; label: string }[];
-
-    const fits     = cutFitsBoard(c.width, c.length, boardW, boardH);
-    const joinable = !!c.joinable;
-
-    if (!fits && joinable) {
-      const split = splitJoinable(c, boardW, boardH);
-      if (split) {
-        pieces = Array.from({ length: split.parts }, (_, i) => ({
-          width:  split.width,
-          length: split.length,
-          label:  `${c.label || 'Pieza'} ${i + 1}/${split.parts}`,
-        }));
-      } else {
-        // No se puede partir: queda como no encajable.
-        pieces = [{ width: c.width, length: c.length, label: c.label || 'Pieza' }];
-      }
-    } else {
-      pieces = [{ width: c.width, length: c.length, label: c.label || `${c.width}×${c.length}` }];
-    }
-
-    for (let i = 0; i < c.qty; i++) {
-      for (const p of pieces) {
-        expanded.push({
-          cutId:   c.id,
-          label:   p.label,
-          width:   p.width,
-          length:  p.length,
-          copyIdx: i,
-        });
-      }
-    }
-  }
-
-  // 2. Ordenar por lado mayor descendente para mejor empaque.
-  expanded.sort(
-    (a, b) =>
-      Math.max(b.width, b.length) - Math.max(a.width, a.length),
-  );
-
+function packOntoSingleBoard(
+  boardW:   number,
+  boardH:   number,
+  kerf:     number,
+  items:    ExpandedCut[],
+): { placed: PlacedCut[]; remnants: Remnant[]; usedArea: number; remaining: ExpandedCut[] } {
   const free: FreeRect[] = [{ x: 0, y: 0, w: boardW, h: boardH }];
   const placed: PlacedCut[] = [];
-  const unplaced: { cutId: string; copyIdx: number; label: string }[] = [];
+  const remaining: ExpandedCut[] = [];
   let usedArea = 0;
 
-  for (const item of expanded) {
+  for (const item of items) {
     let bestIdx     = -1;
     let bestRotated = false;
     let bestScore   = Infinity;
@@ -173,20 +132,16 @@ export function layoutCuts(
       const r = free[i];
       if (item.width <= r.w && item.length <= r.h) {
         const score = (r.w - item.width) * (r.h - item.length);
-        if (score < bestScore) {
-          bestScore = score; bestIdx = i; bestRotated = false;
-        }
+        if (score < bestScore) { bestScore = score; bestIdx = i; bestRotated = false; }
       }
       if (item.length <= r.w && item.width <= r.h) {
         const score = (r.w - item.length) * (r.h - item.width);
-        if (score < bestScore) {
-          bestScore = score; bestIdx = i; bestRotated = true;
-        }
+        if (score < bestScore) { bestScore = score; bestIdx = i; bestRotated = true; }
       }
     }
 
     if (bestIdx < 0) {
-      unplaced.push({ cutId: item.cutId, copyIdx: item.copyIdx, label: item.label });
+      remaining.push(item);
       continue;
     }
 
@@ -207,30 +162,118 @@ export function layoutCuts(
     usedArea += w * h;
 
     free.splice(bestIdx, 1);
-
     const rightW = r.w - w - kerf;
     const downH  = r.h - h - kerf;
-
-    if (rightW > 0) {
-      free.push({ x: r.x + w + kerf, y: r.y, w: rightW, h: h });
-    }
-    if (downH > 0) {
-      free.push({ x: r.x, y: r.y + h + kerf, w: r.w, h: downH });
-    }
+    if (rightW > 0) free.push({ x: r.x + w + kerf, y: r.y, w: rightW, h: h });
+    if (downH  > 0) free.push({ x: r.x, y: r.y + h + kerf, w: r.w,   h: downH });
   }
 
   const remnants: Remnant[] = free
     .filter((r) => r.w >= MIN_REMNANT_CM && r.h >= MIN_REMNANT_CM)
-    .map((r, i) => ({
-      id:     `r${i}`,
-      x:      r.x,
-      y:      r.y,
-      width:  round2(r.w),
-      length: round2(r.h),
-    }))
+    .map((r, i) => ({ id: `r${i}`, x: r.x, y: r.y, width: round2(r.w), length: round2(r.h) }))
     .sort((a, b) => b.width * b.length - a.width * a.length);
 
-  return { placed, unplaced, remnants, usedArea, totalArea };
+  return { placed, remnants, usedArea, remaining };
+}
+
+/**
+ * Distribuye los cortes sobre tantos tableros de boardW × boardH (cm)
+ * como sean necesarios. Usa un kerf en mm entre piezas adyacentes.
+ * Devuelve un LayoutResult con múltiples tableros (boards[]).
+ */
+export function layoutCuts(
+  boardW:  number,
+  boardH:  number,
+  cuts:    Cut[],
+  kerfMm:  number,
+): LayoutResult {
+  const kerf = kerfMm / 10; // mm → cm
+
+  // 1. Expandir cada Cut según qty y, si corresponde, según joinable.
+  const expanded: ExpandedCut[] = [];
+  const neverFit: { cutId: string; copyIdx: number; label: string }[] = [];
+
+  for (const c of cuts) {
+    if (c.width <= 0 || c.length <= 0 || c.qty <= 0) continue;
+
+    const fits     = cutFitsBoard(c.width, c.length, boardW, boardH);
+    const joinable = !!c.joinable;
+
+    let pieces: { width: number; length: number; label: string }[];
+
+    if (!fits && joinable) {
+      const split = splitJoinable(c, boardW, boardH);
+      if (split) {
+        pieces = Array.from({ length: split.parts }, (_, i) => ({
+          width:  split.width,
+          length: split.length,
+          label:  `${c.label || 'Pieza'} ${i + 1}/${split.parts}`,
+        }));
+      } else {
+        pieces = [{ width: c.width, length: c.length, label: c.label || 'Pieza' }];
+      }
+    } else {
+      pieces = [{ width: c.width, length: c.length, label: c.label || `${c.width}×${c.length}` }];
+    }
+
+    for (let i = 0; i < c.qty; i++) {
+      for (const p of pieces) {
+        const item: ExpandedCut = { cutId: c.id, label: p.label, width: p.width, length: p.length, copyIdx: i };
+        // Filtrar piezas que jamás cabrán en un tablero vacío
+        if (!cutFitsBoard(p.width, p.length, boardW, boardH)) {
+          neverFit.push({ cutId: c.id, copyIdx: i, label: p.label });
+        } else {
+          expanded.push(item);
+        }
+      }
+    }
+  }
+
+  // 2. Ordenar por lado mayor descendente para mejor empaque.
+  expanded.sort((a, b) => Math.max(b.width, b.length) - Math.max(a.width, a.length));
+
+  // 3. Empacar en tableros sucesivos hasta que no quede nada.
+  const boards: BoardLayout[] = [];
+  let remaining = [...expanded];
+
+  while (remaining.length > 0) {
+    const result = packOntoSingleBoard(boardW, boardH, kerf, remaining);
+
+    boards.push({
+      boardIndex: boards.length,
+      placed:     result.placed,
+      remnants:   result.remnants,
+      usedArea:   result.usedArea,
+      totalArea:  boardW * boardH,
+    });
+
+    // Protección contra loop infinito: si ninguna pieza cupo, salir.
+    if (result.placed.length === 0) {
+      neverFit.push(...result.remaining.map(r => ({ cutId: r.cutId, copyIdx: r.copyIdx, label: r.label })));
+      break;
+    }
+
+    remaining = result.remaining;
+  }
+
+  // Si no hubo ningún tablero (sin cortes válidos), crear resultado vacío.
+  if (boards.length === 0) {
+    boards.push({ boardIndex: 0, placed: [], remnants: [], usedArea: 0, totalArea: boardW * boardH });
+  }
+
+  const lastBoard   = boards[boards.length - 1];
+  const allPlaced   = boards.flatMap((b) => b.placed);
+  const totalUsed   = boards.reduce((s, b) => s + b.usedArea, 0);
+  const totalArea   = boards.reduce((s, b) => s + b.totalArea, 0);
+
+  return {
+    boards,
+    placed:   allPlaced,
+    unplaced: neverFit,
+    remnants: lastBoard.remnants,
+    usedArea: totalUsed,
+    totalArea,
+  };
 }
 
 function round2(n: number): number {

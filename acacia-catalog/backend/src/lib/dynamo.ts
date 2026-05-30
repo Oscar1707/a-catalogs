@@ -15,6 +15,7 @@ import {
 import { ProductItem, ProductUpdateInput, ProductCreateInput } from '../types/product';
 import { QuoteItem, NoteItem, QuoteStatus }                  from '../types/quote';
 import { SlideItem }                                         from '../types/slide';
+import { BoardItem, BoardPublic }                            from '../types/board';
 import {
   CostingCreateInput,
   CostingItemDB,
@@ -620,5 +621,39 @@ export async function deleteCosting(id: string): Promise<void> {
     TableName:           TABLE,
     Key:                 { PK: `COSTING#${id}`, SK: 'METADATA' },
     ConditionExpression: 'attribute_exists(PK)',
+  }));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  TABLEROS DE CORTE — PK: BOARD#<id> · SK: METADATA
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function listBoards(): Promise<BoardPublic[]> {
+  const items: BoardPublic[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'BOARD#' },
+      ExclusiveStartKey:         lastKey,
+    }));
+    for (const it of (res.Items ?? [])) {
+      const { PK: _pk, SK: _sk, ...rest } = it as BoardItem;
+      items.push(rest as BoardPublic);
+    }
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function putBoard(board: BoardItem): Promise<void> {
+  await dynamo.send(new PutCommand({ TableName: TABLE, Item: board }));
+}
+
+export async function deleteBoard(id: string): Promise<void> {
+  await dynamo.send(new DeleteCommand({
+    TableName: TABLE,
+    Key:       { PK: `BOARD#${id}`, SK: 'METADATA' },
   }));
 }
