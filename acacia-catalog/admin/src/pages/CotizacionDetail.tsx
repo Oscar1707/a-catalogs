@@ -2,10 +2,10 @@
 // Detalle completo de una cotización + selector de status + timeline de notas.
 
 import { useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeft, MessageCircle, Plus } from 'lucide-react';
+import { ArrowLeft, DollarSign, MessageCircle, Plus } from 'lucide-react';
 import { addQuoteNote, getQuote, updateQuoteStatus } from '@/api/quotes';
 import { StatusBadge } from '@/components/StatusBadge';
 import { QUOTE_STATUSES, type QuoteStatus } from '@/types/quote';
@@ -14,6 +14,7 @@ export function CotizacionDetail() {
   const { reference = '' } = useParams<{ reference: string }>();
   const ref = reference.toUpperCase();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ['admin', 'quote', ref],
@@ -164,6 +165,28 @@ export function CotizacionDetail() {
                 </p>
               )}
             </div>
+          </ActionsBlock>
+
+          <ActionsBlock title="Finanzas">
+            <button
+              type="button"
+              onClick={() => {
+                // Navega a /finanzas con state para pre-llenar el modal
+                navigate('/finanzas', {
+                  state: {
+                    openModal:       true,
+                    type:            'ingreso',
+                    concept:         `Pago · ${data.name}`,
+                    quoteReference:  data.reference,
+                    category:        'Anticipo',
+                  },
+                });
+              }}
+              className="inline-flex w-full items-center justify-center gap-2 border border-line px-4 py-3 text-[10px] font-light uppercase text-bone tracking-[0.25em] transition-colors hover:bg-ink-soft hover:border-amber/60"
+            >
+              <DollarSign size={14} strokeWidth={1.2} />
+              Registrar pago
+            </button>
           </ActionsBlock>
 
           <ActionsBlock title="Contactar">

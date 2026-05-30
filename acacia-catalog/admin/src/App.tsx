@@ -14,6 +14,8 @@ import { Cortes } from '@/pages/Cortes';
 import { Costos } from '@/pages/Costos';
 import { Analytics } from '@/pages/Analytics';
 import { Slides } from '@/pages/Slides';
+import { Finanzas } from '@/pages/Finanzas';
+import { Inventario } from '@/pages/Inventario';
 
 // Cliente para futuras queries (cotizaciones, productos, slides...).
 const queryClient = new QueryClient({
@@ -46,7 +48,9 @@ export default function App() {
               <Route path="cortes"                  element={<Cortes            />} />
               <Route path="costos"                  element={<Costos            />} />
               <Route path="analytics"               element={<Analytics         />} />
-              <Route path="slides" element={<Slides />} />
+              <Route path="slides"                  element={<Slides            />} />
+              <Route path="finanzas"               element={<Finanzas          />} />
+              <Route path="inventario"             element={<Inventario        />} />
             </Route>
           </Route>
 

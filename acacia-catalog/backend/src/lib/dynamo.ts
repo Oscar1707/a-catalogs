@@ -22,6 +22,8 @@ import {
   CostingPublic,
   CostingUpdateInput,
 } from '../types/costing';
+import { TransactionItem, TransactionPublic } from '../types/finance';
+import { InventoryItem, InventoryPublic, InventoryMovement, MovementPublic, MovementType } from '../types/inventory';
 
 // ── Cliente singleton ──────────────────────────────────────────────────────────
 const raw = new DynamoDBClient({
@@ -656,4 +658,148 @@ export async function deleteBoard(id: string): Promise<void> {
     TableName: TABLE,
     Key:       { PK: `BOARD#${id}`, SK: 'METADATA' },
   }));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  FINANZAS — PK: TRANSACTION#<id> · SK: META
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function listTransactions(): Promise<TransactionPublic[]> {
+  const items: TransactionPublic[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix) AND SK = :sk',
+      ExpressionAttributeValues: { ':prefix': 'TRANSACTION#', ':sk': 'META' },
+      ExclusiveStartKey:         lastKey,
+    }));
+    for (const it of (res.Items ?? [])) {
+      const { PK: _pk, SK: _sk, ...rest } = it as TransactionItem;
+      items.push(rest as TransactionPublic);
+    }
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function putTransaction(tx: TransactionItem): Promise<void> {
+  await dynamo.send(new PutCommand({ TableName: TABLE, Item: tx }));
+}
+
+export async function deleteTransaction(id: string): Promise<void> {
+  await dynamo.send(new DeleteCommand({
+    TableName: TABLE,
+    Key:       { PK: `TRANSACTION#${id}`, SK: 'META' },
+  }));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  INVENTARIO — PK: INVENTORY#<id> · SK: META (item) | MOV#<iso>#<id> (movimiento)
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function listInventoryItems(): Promise<InventoryPublic[]> {
+  const items: InventoryPublic[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamo.send(new ScanCommand({
+      TableName:                 TABLE,
+      FilterExpression:          'begins_with(PK, :prefix) AND SK = :sk',
+      ExpressionAttributeValues: { ':prefix': 'INVENTORY#', ':sk': 'META' },
+      ExclusiveStartKey:         lastKey,
+    }));
+    for (const it of (res.Items ?? [])) {
+      const { PK: _pk, SK: _sk, ...rest } = it as InventoryItem;
+      items.push(rest as InventoryPublic);
+    }
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function putInventoryItem(item: InventoryItem): Promise<void> {
+  await dynamo.send(new PutCommand({ TableName: TABLE, Item: item }));
+}
+
+export async function deleteInventoryItem(id: string): Promise<void> {
+  // Eliminar item META y todos sus movimientos en batch (scan + delete)
+  const { Items } = await dynamo.send(new QueryCommand({
+    TableName:                 TABLE,
+    KeyConditionExpression:    'PK = :pk',
+    ExpressionAttributeValues: { ':pk': `INVENTORY#${id}` },
+    ProjectionExpression:      'PK, SK',
+  }));
+  for (const it of (Items ?? [])) {
+    await dynamo.send(new DeleteCommand({
+      TableName: TABLE,
+      Key:       { PK: it.PK, SK: it.SK },
+    }));
+  }
+}
+
+export async function listInventoryMovements(itemId: string): Promise<MovementPublic[]> {
+  const items: MovementPublic[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamo.send(new QueryCommand({
+      TableName:                 TABLE,
+      KeyConditionExpression:    'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: { ':pk': `INVENTORY#${itemId}`, ':sk': 'MOV#' },
+      ScanIndexForward:          false, // más reciente primero
+      ExclusiveStartKey:         lastKey,
+    }));
+    for (const it of (res.Items ?? [])) {
+      const { PK: _pk, SK: _sk, ...rest } = it as InventoryMovement;
+      items.push(rest as MovementPublic);
+    }
+    lastKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+  return items;
+}
+
+/**
+ * Registra un movimiento de inventario y actualiza el stock del item.
+ * Devuelve la cantidad nueva.
+ */
+export async function addInventoryMovement(
+  itemId:   string,
+  type:     MovementType,
+  quantity: number,
+  note?:    string,
+  date?:    string,
+): Promise<{ newQuantity: number; movement: MovementPublic }> {
+  const now    = new Date().toISOString();
+  const shortId = Math.random().toString(36).slice(2, 8);
+  const movId  = `${now}#${shortId}`;
+
+  // 1. Guardar movimiento
+  const movement: InventoryMovement = {
+    PK:        `INVENTORY#${itemId}`,
+    SK:        `MOV#${movId}`,
+    id:        movId,
+    itemId,
+    type,
+    quantity,
+    note,
+    date:      date ?? now.slice(0, 10),
+    createdAt: now,
+  };
+  await dynamo.send(new PutCommand({ TableName: TABLE, Item: movement }));
+
+  // 2. Actualizar stock en META
+  const delta = type === 'entrada' ? quantity : -quantity;
+  const res   = await dynamo.send(new UpdateCommand({
+    TableName:                 TABLE,
+    Key:                       { PK: `INVENTORY#${itemId}`, SK: 'META' },
+    UpdateExpression:          'SET quantity = quantity + :delta, updatedAt = :now',
+    ExpressionAttributeValues: { ':delta': delta, ':now': now },
+    ConditionExpression:       'attribute_exists(PK)',
+    ReturnValues:              'ALL_NEW',
+  }));
+
+  const { PK: _pk, SK: _sk, ...rest } = movement;
+  return {
+    newQuantity: (res.Attributes as InventoryItem).quantity,
+    movement:    rest as MovementPublic,
+  };
 }

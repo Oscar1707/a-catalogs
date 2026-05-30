@@ -1166,6 +1166,244 @@ Resources:
             Path: /admin/boards/{id}
             Method: DELETE
 
+  # ─── Lambda: GET /admin/transactions ────────────────────────────────────────
+  AdminListTransactionsFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListTransactions.ts
+    Properties:
+      FunctionName: acacia-admin-list-transactions
+      CodeUri: backend/
+      Handler: src/handlers/adminListTransactions.handler
+      Description: "Admin · lista movimientos financieros"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListTransactions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/transactions
+            Method: GET
+
+  # ─── Lambda: PUT /admin/transactions/{id} ───────────────────────────────────
+  AdminUpsertTransactionFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpsertTransaction.ts
+    Properties:
+      FunctionName: acacia-admin-upsert-transaction
+      CodeUri: backend/
+      Handler: src/handlers/adminUpsertTransaction.handler
+      Description: "Admin · crea o actualiza un movimiento financiero"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpsertTransaction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/transactions/{id}
+            Method: PUT
+
+  # ─── Lambda: DELETE /admin/transactions/{id} ────────────────────────────────
+  AdminDeleteTransactionFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminDeleteTransaction.ts
+    Properties:
+      FunctionName: acacia-admin-delete-transaction
+      CodeUri: backend/
+      Handler: src/handlers/adminDeleteTransaction.handler
+      Description: "Admin · elimina un movimiento financiero"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        DeleteTransaction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/transactions/{id}
+            Method: DELETE
+
+  # ─── Lambda: GET /admin/inventory ───────────────────────────────────────────
+  AdminListInventoryFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminListInventory.ts
+    Properties:
+      FunctionName: acacia-admin-list-inventory
+      CodeUri: backend/
+      Handler: src/handlers/adminListInventory.handler
+      Description: "Admin · lista materiales del inventario"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        ListInventory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/inventory
+            Method: GET
+
+  # ─── Lambda: PUT /admin/inventory/{id} ──────────────────────────────────────
+  AdminUpsertInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminUpsertInventoryItem.ts
+    Properties:
+      FunctionName: acacia-admin-upsert-inventory-item
+      CodeUri: backend/
+      Handler: src/handlers/adminUpsertInventoryItem.handler
+      Description: "Admin · crea o actualiza un material del inventario"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        UpsertInventoryItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/inventory/{id}
+            Method: PUT
+
+  # ─── Lambda: DELETE /admin/inventory/{id} ───────────────────────────────────
+  AdminDeleteInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminDeleteInventoryItem.ts
+    Properties:
+      FunctionName: acacia-admin-delete-inventory-item
+      CodeUri: backend/
+      Handler: src/handlers/adminDeleteInventoryItem.handler
+      Description: "Admin · elimina un material del inventario"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        DeleteInventoryItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/inventory/{id}
+            Method: DELETE
+
+  # ─── Lambda: POST /admin/inventory/{id}/movement ────────────────────────────
+  AdminAddInventoryMovementFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - src/handlers/adminAddInventoryMovement.ts
+    Properties:
+      FunctionName: acacia-admin-add-inventory-movement
+      CodeUri: backend/
+      Handler: src/handlers/adminAddInventoryMovement.handler
+      Description: "Admin · registra entrada/salida de stock en inventario"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${JwtSecretParam}"
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+      Events:
+        AddInventoryMovement:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CatalogApi
+            Path: /admin/inventory/{id}/movement
+            Method: POST
+
   # ─── CloudFront OAC ──────────────────────────────────────────────────────────
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
